@@ -1,0 +1,7 @@
+# dsh-xueqiu bundle layer: 雪球 mini 行情面板
+# 通过 `dsh plugin --profile web add dsh-xueqiu` 安装（不是内置在 web-app bundle 里），
+# 因此本 patch 作为独立 layer 叠加到 profile 的 bundle 栈上。
+
+- insert:
+    - id: xueqiu
+      name: 'dsh-xueqiu'

@@ -389,6 +389,7 @@ return {
         mode: s.mode || 'floating', pos: s.pos || null,
         size: (s.size && isFinite(Number(s.size.w)) && isFinite(Number(s.size.h))) ? { w: Number(s.size.w), h: Number(s.size.h) } : null,
         dockW: s.dockW || null, snap: s.snap || null,
+        snapEdge: s.snapEdge || null, snapW: s.snapW || 380,
         tab: s.tab || 'market', minimized: !!s.minimized
       }
     }
@@ -406,6 +407,8 @@ return {
       }
       if (args.dockW !== undefined && isFinite(Number(args.dockW))) s.dockW = Number(args.dockW)
       if ('snap' in args && args.snap !== undefined) s.snap = args.snap === null ? null : String(args.snap)
+      if (args.snapEdge === 'left' || args.snapEdge === 'right' || args.snapEdge === null) s.snapEdge = args.snapEdge
+      if (args.snapW !== undefined && isFinite(Number(args.snapW))) s.snapW = Number(args.snapW)
       await saveUiState()
       return { ok: true }
     }

@@ -1,6 +1,6 @@
 {
   "name": "dsh-xueqiu",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "雪球 mini 行情面板 — DeepSeek Harness 免登录 A股/港美股实时行情、K线(蜡烛/成交量/均线)、分时图、热榜、搜索、7x24 快讯、热议用户。可拖拽悬浮面板，交易时段智能刷新。",
   "keywords": [
     "dsh",

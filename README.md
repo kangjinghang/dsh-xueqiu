@@ -28,18 +28,21 @@
 
 **主面板**：大盘指数 + 自选股行情，可拖拽悬浮窗口：
 
-![主面板](./assets/panel.png)
+![主面板](https://raw.githubusercontent.com/wanderer-yk/dsh-xueqiu/main/assets/panel.png)
 
 **个股详情**：16 项行情数据 + K线蜡烛图（成交量柱 / MA5-10-20 均线）+ 财务指标 + 热议用户：
 
-![个股详情](./assets/detail.png)
+![个股详情](https://raw.githubusercontent.com/wanderer-yk/dsh-xueqiu/main/assets/detail.png)
 
 ## 📦 安装
 
 ### 方式一：标准 bundle 插件（推荐）
 
 ```bash
-# GitHub 源（git 安装会直接从源码构建）
+# npm 包
+dsh plugin --profile web add dsh-xueqiu
+
+# 或 GitHub 源（git 安装会直接从源码构建）
 dsh plugin --profile web add github:wanderer-yk/dsh-xueqiu
 
 # 或本地目录

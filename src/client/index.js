@@ -311,7 +311,8 @@ export default {
     // ---------- 共享 UI 状态（悬浮/嵌入/位置/尺寸/标签页） ----------
     const ui = {
       mode: 'floating', pos: null, size: { w: 720, h: 640 }, dockW: 720,
-      snap: null, minimized: false, tab: 'market', closed: false, hydrated: false,
+      snap: null, snapEdge: null, snapW: 380,
+      minimized: false, tab: 'market', closed: false, hydrated: false,
       _fns: [],
       subscribe: function (fn) {
         this._fns.push(fn)
@@ -344,7 +345,8 @@ export default {
     const saveUi = ctx.debounce(function () {
       call('ui.set', {
         mode: ui.mode, pos: ui.pos, size: ui.size, dockW: ui.dockW,
-        snap: ui.snap, tab: ui.tab, minimized: ui.minimized
+        snap: ui.snap, snapEdge: ui.snapEdge, snapW: ui.snapW,
+        tab: ui.tab, minimized: ui.minimized
       }).catch(function () { /* 忽略 */ })
     }, 800)
 
@@ -529,7 +531,7 @@ export default {
             ]),
             el('div', { key: 'c', className: colorOf(q.percent) }, fmt(q.current)),
             el('div', { key: 'p', className: colorOf(q.percent) }, fmtPct(q.percent)),
-            el('div', { key: 'v', className: 'xq-sub' }, fmtVol(q.volume)),
+            el('div', { key: 'v', className: 'xq-sub xq-vol-col' }, fmtVol(q.volume)),
             el('div', { key: 'a2', className: 'xq-actions' }, [
               el('button', { key: 'd', className: 'xq-btn-mini', onClick: function () { openDetail(q.symbol) } }, '详情'),
               el('button', { key: 'r', className: 'xq-btn-mini', onClick: function () { removeWatch(q.symbol) } }, '×')
@@ -737,11 +739,12 @@ export default {
       return el('div', null, [tabs, errBox, content])
     }
 
-    // ---------- 悬浮外壳（shell.overlay）：自由拖拽 + 边缘磁吸 + 缩放 ----------
+    // ---------- 悬浮外壳（shell.overlay）：自由拖拽 + 左右边缘贴靠 + 四角磁吸 + 缩放 ----------
     function FloatingShell() {
       const [, force] = React.useState(0)
       const [fIdx, setFIdx] = React.useState([])
       const [fOpen, setFOpen] = React.useState(true)
+      const [dragTarget, setDragTarget] = React.useState(null)
       React.useEffect(function () {
         let alive = true
         function refresh() {
@@ -765,6 +768,8 @@ export default {
           if (d && d.size) ui.set({ size: { w: Number(d.size.w), h: Number(d.size.h) } })
           if (d && d.dockW) ui.set({ dockW: Number(d.dockW) })
           if (d && d.snap) ui.set({ snap: d.snap })
+          if (d && (d.snapEdge === 'left' || d.snapEdge === 'right')) ui.set({ snapEdge: d.snapEdge })
+          if (d && d.snapW) ui.set({ snapW: Number(d.snapW) })
           if (d && d.tab) ui.set({ tab: d.tab })
           ui.set({ minimized: !!(d && d.minimized), hydrated: true })
         }).catch(function () { ui.set({ hydrated: true }) })
@@ -781,25 +786,47 @@ export default {
       if (ui.mode !== 'floating' || ui.closed || !ui.hydrated) return null
       const s = ui.size
 
-      // 拖拽
+      // 拖拽（贴靠状态下按下标题栏 → 解除贴靠回到自由）
       function onTitleDown(e) {
         if (e.pointerType === 'mouse' && e.button !== 0) return
+        if (ui.snapEdge) {
+          const vp = viewport()
+          if (vp) {
+            const x = ui.snapEdge === 'right' ? vp.w - ui.snapW : 0
+            ui.set({ snapEdge: null, pos: { x: x, y: 0 }, snap: null })
+          } else {
+            ui.set({ snapEdge: null, pos: { x: e.clientX - 60, y: e.clientY - 20 }, snap: null })
+          }
+        }
         const baseX = ui.pos ? ui.pos.x : e.clientX
         const baseY = ui.pos ? ui.pos.y : e.clientY
         dragRef = { dx: e.clientX - baseX, dy: e.clientY - baseY }
         ui.set({ snap: null })
+        setDragTarget(null)
         try { e.currentTarget.setPointerCapture(e.pointerId) } catch (err) { /* ignore */ }
       }
       function onTitleMove(e) {
         if (!dragRef) return
         ui.set({ pos: { x: Math.max(4, e.clientX - dragRef.dx), y: Math.max(4, e.clientY - dragRef.dy) } })
+        const vp = viewport()
+        if (vp) {
+          if (e.clientX >= vp.w - 70) setDragTarget('right')
+          else if (e.clientX <= 70) setDragTarget('left')
+          else setDragTarget(null)
+        }
       }
       function onTitleUp(e) {
         dragRef = null
         try { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId) } catch (err) { /* ignore */ }
+        if (dragTarget) {
+          ui.set({ snapEdge: dragTarget, pos: null, snap: null, snapW: ui.snapW || 380 })
+          setDragTarget(null)
+          return
+        }
+        setDragTarget(null)
         snapCheck()
       }
-      // 边缘磁吸：拖放终点靠近任一屏幕角 → 吸附
+      // 四角磁吸：拖放终点靠近任一屏幕角 → 吸附
       function snapCheck() {
         const vp = viewport()
         const p = ui.pos
@@ -818,24 +845,36 @@ export default {
         }
         ui.set({ pos: best ? { x: Math.max(0, best.x), y: Math.max(0, best.y) } : p, snap: best ? best.key : null })
       }
-      // 一键贴右下角 / 解除
+      // 📌 循环：右下角 → 右侧窄栏贴靠 → 解除
       function toggleSnap() {
         const vp = viewport()
-        if (ui.snap === 'br') { ui.set({ snap: null }); return }
+        if (ui.snapEdge === 'right') { ui.set({ snapEdge: null }); return }
+        if (ui.snap === 'br') {
+          ui.set({ snap: null })
+          if (vp) ui.set({ snapEdge: 'right', pos: null, snapW: ui.snapW || 380 })
+          return
+        }
         if (vp) { ui.set({ snap: 'br', pos: { x: Math.max(0, vp.w - s.w - 8), y: Math.max(0, vp.h - s.h - 8) } }) }
         else { ui.set({ snap: 'br', pos: null }) }
       }
-      // 缩放（右下角手柄）
+      // 缩放（右下角手柄；贴靠时只调宽度）
       function onRsDown(e) {
         if (e.pointerType === 'mouse' && e.button !== 0) return
-        resizeRef = { w: s.w, h: s.h, x: e.clientX, y: e.clientY }
+        resizeRef = ui.snapEdge
+          ? { w: ui.snapW, h: 0, x: e.clientX, y: e.clientY }
+          : { w: s.w, h: s.h, x: e.clientX, y: e.clientY }
         try { e.currentTarget.setPointerCapture(e.pointerId) } catch (err) { /* ignore */ }
       }
       function onRsMove(e) {
         if (!resizeRef) return
-        const w = Math.min(Math.max(460, resizeRef.w + (e.clientX - resizeRef.x)), 1100)
-        const h = Math.min(Math.max(380, resizeRef.h + (e.clientY - resizeRef.y)), 1000)
-        ui.set({ size: { w: w, h: h }, snap: null })
+        if (ui.snapEdge) {
+          const w = Math.min(Math.max(300, resizeRef.w + (e.clientX - resizeRef.x)), 560)
+          ui.set({ snapW: w })
+        } else {
+          const w = Math.min(Math.max(460, resizeRef.w + (e.clientX - resizeRef.x)), 1100)
+          const h = Math.min(Math.max(380, resizeRef.h + (e.clientY - resizeRef.y)), 1000)
+          ui.set({ size: { w: w, h: h }, snap: null })
+        }
       }
       function onRsUp(e) {
         resizeRef = null
@@ -845,39 +884,65 @@ export default {
       const dragProps = { onPointerDown: onTitleDown, onPointerMove: onTitleMove, onPointerUp: onTitleUp, onPointerCancel: onTitleUp }
       const rsProps = { onPointerDown: onRsDown, onPointerMove: onRsMove, onPointerUp: onRsUp, onPointerCancel: onRsUp }
 
+      // 贴靠助手预览（拖动中靠近边缘时显示）
+      let snapPreview = null
+      if (dragTarget) {
+        snapPreview = el('div', {
+          key: 'prev', className: 'xq-snap-preview xq-snap-' + dragTarget,
+          style: { width: ui.snapW || 380 }
+        })
+      }
+
       // 最小化条
       if (ui.minimized) {
         const idxLine = fIdx.map(function (q) {
           return q.name + ' ' + fmt(q.current) + ' ' + fmtPct(q.percent)
         }).join(' · ')
-        const minStyle = ui.pos ? { left: ui.pos.x, top: ui.pos.y, right: 'auto', bottom: 'auto' } : null
-        return el('div', { className: 'xq-float xq-min', style: minStyle, ...dragProps, onClick: function () { ui.set({ minimized: false }) } }, [
-          el('span', { key: 'logo', className: 'xq-logo' }, [el('b', { key: 'b' }, '雪球'), ' mini']),
-          el('span', { key: 'sum', className: 'xq-sum' }, idxLine || '点击展开行情面板'),
-          el('span', { key: 'sp', className: 'xq-spacer' }),
-          el('button', { key: 'x', className: 'xq-btn-mini', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); ui.set({ closed: true }) } }, '✕'),
-          el('span', { key: 'caret', className: 'xq-caret' }, '展开 ▾')
+        let minStyle = null
+        if (ui.snapEdge === 'right') minStyle = { right: 0, top: 0, bottom: 0, width: ui.snapW, height: 'auto' }
+        else if (ui.snapEdge === 'left') minStyle = { left: 0, top: 0, bottom: 0, width: ui.snapW, height: 'auto' }
+        else if (ui.pos) minStyle = { left: ui.pos.x, top: ui.pos.y, right: 'auto', bottom: 'auto' }
+        return el('div', { className: 'xq-wrap' }, [
+          el('div', { key: 'min', className: 'xq-float xq-min' + (ui.snapEdge ? ' xq-snapped' : ''), style: minStyle, ...dragProps, onClick: function () { ui.set({ minimized: false }) } }, [
+            el('span', { key: 'logo', className: 'xq-logo' }, [el('b', { key: 'b' }, '雪球'), ' mini']),
+            el('span', { key: 'sum', className: 'xq-sum' }, idxLine || '点击展开行情面板'),
+            el('span', { key: 'sp', className: 'xq-spacer' }),
+            el('button', { key: 'x', className: 'xq-btn-mini', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); ui.set({ closed: true }) } }, '✕'),
+            el('span', { key: 'caret', className: 'xq-caret' }, '展开 ▾')
+          ]),
+          snapPreview
         ])
       }
 
+      const snapped = ui.snapEdge ? ' xq-snapped xq-narrow' : (ui.snap ? ' xq-snapped' : '')
       const titleBar = el('div', { className: 'xq-title', ...dragProps }, [
         el('span', { key: 'logo', className: 'xq-logo' }, [el('b', { key: 'b' }, '雪球'), ' mini']),
         el('span', { key: 'st', className: 'xq-status' + (fOpen ? ' xq-live' : '') }, fOpen ? '● 盘中' : '已收盘'),
-        el('span', { key: 'upd', className: 'xq-update' }, '拖拽移动 · 松手吸附角落'),
+        el('span', { key: 'upd', className: 'xq-update' }, ui.snapEdge === 'right' ? '已贴右 · 拖走解除' : ui.snapEdge === 'left' ? '已贴左 · 拖走解除' : '拖到左/右边缘贴靠'),
         el('span', { key: 'sp', className: 'xq-spacer' }),
-        el('button', { key: 'snap', className: 'xq-btn-mini', title: ui.snap === 'br' ? '解除右下角吸附' : '吸附到右下角', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); toggleSnap() } }, ui.snap === 'br' ? '📌' : '📍'),
+        el('button', { key: 'snap', className: 'xq-btn-mini', title: '循环：右下角 → 右侧窄栏 → 解除', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); toggleSnap() } }, ui.snapEdge === 'right' ? '◫' : ui.snap === 'br' ? '📌' : '📍'),
         el('button', { key: 'dock', className: 'xq-btn-mini', title: '嵌入到输入框上方（不遮挡对话）', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); ui.set({ mode: 'docked', minimized: false }) } }, '嵌入'),
         el('button', { key: 'min', className: 'xq-btn-mini', title: '收起', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); ui.set({ minimized: true }) } }, '—'),
         el('button', { key: 'cls', className: 'xq-btn-mini', title: '关闭（点底部指数条重新打开）', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); ui.set({ closed: true }) } }, '✕')
       ])
 
-      return el('div', { className: 'xq-float' + (ui.snap ? ' xq-snapped' : ''), style: posStyle() }, [
-        titleBar,
-        el('div', { key: 'body', className: 'xq-body' }, [
-          el(XueqiuPanel, null)
+      return el('div', { className: 'xq-wrap' }, [
+        el('div', { key: 'f', className: 'xq-float' + snapped, style: posStyle() }, [
+          titleBar,
+          el('div', { key: 'body', className: 'xq-body' }, [
+            el(XueqiuPanel, null)
+          ]),
+          el('div', { key: 'rs', className: 'xq-resize', ...rsProps })
         ]),
-        el('div', { key: 'rs', className: 'xq-resize', ...rsProps })
+        snapPreview
       ])
+    }
+
+    function posStyle() {
+      if (ui.snapEdge === 'right') return { right: 0, top: 0, bottom: 0, left: 'auto', width: ui.snapW }
+      if (ui.snapEdge === 'left') return { left: 0, top: 0, bottom: 0, right: 'auto', width: ui.snapW }
+      if (ui.pos) return { left: ui.pos.x, top: ui.pos.y, right: 'auto', bottom: 'auto', width: ui.size.w, height: ui.size.h }
+      return { width: ui.size.w, height: ui.size.h }
     }
 
     // ---------- 嵌入外壳（conversation.input.dock）：输入框上方，不遮挡对话 ----------
@@ -994,7 +1059,19 @@ export default {
       '.xq-resize::after{content:"";position:absolute;right:4px;bottom:4px;width:8px;height:8px;border-right:2px solid var(--dsw-alias-label-secondary);border-bottom:2px solid var(--dsw-alias-label-secondary);opacity:.55;}\n' +
       '.xq-resize-w{position:absolute;right:0;top:0;bottom:0;width:10px;cursor:ew-resize;z-index:6;}\n' +
       '.xq-resize-w::after{display:none;}\n' +
-      '.xq-snapped{transition:left .16s ease, top .16s ease;}\n'
+      '.xq-snapped{transition:left .16s ease, top .16s ease;}\n' +
+      '.xq-wrap{pointer-events:none;position:fixed;inset:0;z-index:1200;}\n' +
+      '.xq-wrap .xq-float{pointer-events:auto;}\n' +
+      '.xq-snap-preview{position:fixed;top:8px;bottom:8px;border:2px solid var(--dsw-alias-brand-primary);border-radius:10px;background:var(--dsw-alias-brand-primary);opacity:.13;pointer-events:none;z-index:1199;}\n' +
+      '.xq-snap-right{right:8px;}\n' +
+      '.xq-snap-left{left:8px;}\n' +
+      '.xq-float.xq-narrow .xq-grid-hd,.xq-float.xq-narrow .xq-grid-row{grid-template-columns:1.5fr 1fr 1fr 62px;}\n' +
+      '.xq-float.xq-narrow .xq-vol-col{display:none;}\n' +
+      '.xq-float.xq-narrow .xq-idx-card{min-width:88px;padding:5px 6px;}\n' +
+      '.xq-float.xq-narrow .xq-idx-cur{font-size:12px;}\n' +
+      '.xq-float.xq-narrow .xq-stats{grid-template-columns:repeat(2,1fr);}\n' +
+      '.xq-float.xq-narrow .xq-detail-cur{font-size:16px;}\n' +
+      '.xq-float.xq-narrow .xq-periods button,.xq-float.xq-narrow .xq-modes button{padding:2px 6px;}\n'
     )
 
     // ---------- 注册 ----------

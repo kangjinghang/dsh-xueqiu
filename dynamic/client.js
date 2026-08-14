@@ -169,13 +169,7 @@ return {
       }
     }
 
-    // UI 状态防抖保存
-    const saveUi = ctx.debounce(function (s) {
-      call('ui.set', s).catch(function () { /* 忽略 */ })
-    }, 800)
-
-    // 拖拽用可变引用（面板实例唯一）
-    let dragRef = null
+    // （saveUi / dragRef / ui 共享状态见下方新块）
 
     // ---------- K线蜡烛图（含成交量与均线） ----------
     function KlineChart(props) {
@@ -309,61 +303,52 @@ return {
       ])
     }
 
-    // ---------- 底部指数条 ----------
-    function Ticker() {
-      const [indices, setIndices] = React.useState([])
-      React.useEffect(function () {
-        let alive = true
-        function refresh() {
-          call('quote', { symbols: ['SH000001', 'SZ399001', 'SZ399006', 'SH000300'] }).then(function (data) {
-            if (alive) setIndices((data && data.list) || [])
-          }).catch(function () { /* 静默失败 */ })
+    // ---------- 共享 UI 状态（悬浮/嵌入/位置/尺寸/标签页） ----------
+    const ui = {
+      mode: 'floating', pos: null, size: { w: 720, h: 640 }, dockW: 720,
+      snap: null, minimized: false, tab: 'market', closed: false, hydrated: false,
+      _fns: [],
+      subscribe: function (fn) {
+        this._fns.push(fn)
+        const self = this
+        return function () {
+          const i = self._fns.indexOf(fn)
+          if (i !== -1) self._fns.splice(i, 1)
         }
-        refresh()
-        const stop = ctx.interval(refresh, 30000)
-        return function () { alive = false; if (stop) stop() }
-      }, [])
-      if (!indices.length) return null
-      const kids = indices.map(function (q) {
-        return el('span', { key: q.symbol, className: 'xq-tick' }, [
-          el('span', { key: 'n', className: 'xq-tick-name' }, q.name),
-          el('span', { key: 'c', className: 'xq-tick-cur ' + colorOf(q.percent) }, fmt(q.current)),
-          el('span', { key: 'p', className: colorOf(q.percent) }, fmtPct(q.percent))
-        ])
-      })
-      return el('div', { className: 'xq-ticker', onClick: function () { bus.emit('open') } }, kids)
+      },
+      notify: function () {
+        const fns = this._fns.slice()
+        for (let i = 0; i < fns.length; i++) { try { fns[i]() } catch (e) { /* ignore */ } }
+      },
+      set: function (patch) {
+        let ch = false
+        for (const k in patch) {
+          if (this[k] !== patch[k]) { this[k] = patch[k]; ch = true }
+        }
+        if (ch) this.notify()
+      }
     }
 
-    // ---------- 输入框上方入口条 ----------
-    function Entry() {
-      const [indices, setIndices] = React.useState([])
-      React.useEffect(function () {
-        let alive = true
-        function refresh() {
-          call('quote', { symbols: ['SH000001', 'SZ399001', 'SZ399006', 'SH000300'] }).then(function (data) {
-            if (alive) setIndices((data && data.list) || [])
-          }).catch(function () { /* 静默失败 */ })
-        }
-        refresh()
-        const stop = ctx.interval(refresh, 60000)
-        return function () { alive = false; if (stop) stop() }
-      }, [])
-      const line = indices.map(function (q) {
-        return q.name + ' ' + fmt(q.current) + ' ' + fmtPct(q.percent)
-      }).join(' · ')
-      return el('div', { className: 'xq-entry', onClick: function () { bus.emit('open') } }, [
-        el('span', { key: 'logo', className: 'xq-logo' }, [el('b', { key: 'b' }, '雪球'), ' mini']),
-        el('span', { key: 'sum', className: 'xq-sum' }, line || '点击打开行情面板'),
-        el('span', { key: 'caret', className: 'xq-caret' }, '打开 ▾')
-      ])
+    function viewport() {
+      try { if (typeof window !== 'undefined' && window.innerWidth) return { w: window.innerWidth, h: window.innerHeight } } catch (e) { /* ignore */ }
+      try { if (typeof document !== 'undefined' && document.documentElement && document.documentElement.clientWidth) return { w: document.documentElement.clientWidth, h: document.documentElement.clientHeight } } catch (e) { /* ignore */ }
+      return null
     }
 
-    // ---------- 悬浮主面板 ----------
-    function Panel() {
-      const [visible, setVisible] = React.useState(true)
-      const [minimized, setMinimized] = React.useState(false)
-      const [pos, setPos] = React.useState(null)
-      const [tab, setTab] = React.useState('market')
+    // 保存 UI 状态（防抖）
+    const saveUi = ctx.debounce(function () {
+      call('ui.set', {
+        mode: ui.mode, pos: ui.pos, size: ui.size, dockW: ui.dockW,
+        snap: ui.snap, tab: ui.tab, minimized: ui.minimized
+      }).catch(function () { /* 忽略 */ })
+    }, 800)
+
+    // 拖拽 / 缩放用可变引用（实例唯一）
+    let dragRef = null
+    let resizeRef = null
+
+    // ---------- 面板内容（数据 + tabs + 详情），由悬浮/嵌入外壳共用 ----------
+    function XueqiuPanel() {
       const [watchlist, setWatchlist] = React.useState([])
       const [quotes, setQuotes] = React.useState([])
       const [indices, setIndices] = React.useState([])
@@ -383,30 +368,8 @@ return {
       const [updatedAt, setUpdatedAt] = React.useState(null)
       const [err, setErr] = React.useState('')
       const [loading, setLoading] = React.useState(true)
-      const [hydrated, setHydrated] = React.useState(false)
-
-      // 恢复 UI 状态 + 监听 bus
-      React.useEffect(function () {
-        let alive = true
-        call('ui.get', {}).then(function (d) {
-          if (!alive) return
-          if (d && d.pos) setPos({ x: Number(d.pos.x), y: Number(d.pos.y) })
-          if (d && d.tab) setTab(d.tab)
-          setMinimized(!!(d && d.minimized))
-          setHydrated(true)
-        }).catch(function () { setHydrated(true) })
-        const off = bus.on(function (ev) {
-          if (ev === 'open') { setVisible(true); setMinimized(false) }
-          if (ev === 'close') setVisible(false)
-        })
-        return function () { alive = false; off() }
-      }, [])
-
-      // 持久化 UI 状态（hydrated 后再写，避免覆盖）
-      React.useEffect(function () {
-        if (!hydrated) return
-        saveUi({ tab: tab, minimized: minimized, pos: pos })
-      }, [tab, minimized, pos, hydrated])
+      const tab = ui.tab
+      function setTab(t) { ui.set({ tab: t }) }
 
       function refreshMarket() {
         return Promise.all([
@@ -521,58 +484,6 @@ return {
         addWatch(code)
         setManualCode('')
       }
-
-      // 拖拽
-      function onTitleDown(e) {
-        if (e.pointerType === 'mouse' && e.button !== 0) return
-        const baseX = pos ? pos.x : e.clientX
-        const baseY = pos ? pos.y : e.clientY
-        dragRef = { dx: e.clientX - baseX, dy: e.clientY - baseY }
-        try { e.currentTarget.setPointerCapture(e.pointerId) } catch (err) { /* ignore */ }
-      }
-      function onTitleMove(e) {
-        if (!dragRef) return
-        setPos({ x: Math.max(4, e.clientX - dragRef.dx), y: Math.max(4, e.clientY - dragRef.dy) })
-      }
-      function onTitleUp(e) {
-        dragRef = null
-        try {
-          if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
-        } catch (err) { /* ignore */ }
-      }
-
-      if (!visible) return null
-
-      const dragProps = {
-        onPointerDown: onTitleDown,
-        onPointerMove: onTitleMove,
-        onPointerUp: onTitleUp,
-        onPointerCancel: onTitleUp
-      }
-
-      // 最小化条
-      if (minimized) {
-        const idxLine = indices.map(function (q) {
-          return q.name + ' ' + fmt(q.current) + ' ' + fmtPct(q.percent)
-        }).join(' · ')
-        return el('div', { className: 'xq-float xq-min', style: pos ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto' } : null, onClick: function () { setMinimized(false) }, ...dragProps }, [
-          el('span', { key: 'logo', className: 'xq-logo' }, [el('b', { key: 'b' }, '雪球'), ' mini']),
-          el('span', { key: 'sum', className: 'xq-sum' }, idxLine || '点击展开行情面板'),
-          el('span', { key: 'sp', className: 'xq-spacer' }),
-          el('button', { key: 'x', className: 'xq-btn-mini', onClick: function (e) { e.stopPropagation(); setVisible(false) }, onPointerDown: function (e) { e.stopPropagation() } }, '✕'),
-          el('span', { key: 'caret', className: 'xq-caret' }, '展开 ▾')
-        ])
-      }
-
-      // 标题栏
-      const titleBar = el('div', { className: 'xq-title', ...dragProps }, [
-        el('span', { key: 'logo', className: 'xq-logo' }, [el('b', { key: 'b' }, '雪球'), ' mini']),
-        el('span', { key: 'st', className: 'xq-status' + (marketOpen ? ' xq-live' : '') }, marketOpen ? '● 盘中' : '已收盘'),
-        el('span', { key: 'upd', className: 'xq-update' }, updatedAt ? ('更新 ' + fmtTime(updatedAt)) : (loading ? '加载中…' : '')),
-        el('span', { key: 'sp', className: 'xq-spacer' }),
-        el('button', { key: 'min', className: 'xq-btn-mini', title: '收起', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); setMinimized(true) } }, '—'),
-        el('button', { key: 'cls', className: 'xq-btn-mini', title: '关闭（可从下方入口重新打开）', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); setVisible(false) } }, '✕')
-      ])
 
       const tabs = el('div', { className: 'xq-tabs' }, [
         ['market', '行情'], ['hot', '热榜'], ['search', '搜索'], ['news', '快讯']
@@ -818,11 +729,268 @@ return {
         content = NewsTab()
       }
 
-      return el('div', { className: 'xq-float', style: pos ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto' } : null }, [
+      return el('div', null, [tabs, errBox, content])
+    }
+
+    // ---------- 悬浮外壳（shell.overlay）：自由拖拽 + 边缘磁吸 + 缩放 ----------
+    function FloatingShell() {
+      const [, force] = React.useState(0)
+      const [fIdx, setFIdx] = React.useState([])
+      const [fOpen, setFOpen] = React.useState(true)
+      React.useEffect(function () {
+        let alive = true
+        function refresh() {
+          call('quote', { symbols: ['SH000001', 'SZ399001', 'SZ399006', 'SH000300'] }).then(function (data) {
+            if (!alive) return
+            setFIdx((data && data.list) || [])
+            const st = data ? data.status : null
+            setFOpen(st === 5 || st === 6)
+          }).catch(function () { /* 静默失败 */ })
+        }
+        refresh()
+        const stop = ctx.interval(refresh, 60000)
+        return function () { alive = false; if (stop) stop() }
+      }, [])
+      React.useEffect(function () {
+        let alive = true
+        call('ui.get', {}).then(function (d) {
+          if (!alive) return
+          if (d && d.mode) ui.set({ mode: d.mode })
+          if (d && d.pos) ui.set({ pos: { x: Number(d.pos.x), y: Number(d.pos.y) } })
+          if (d && d.size) ui.set({ size: { w: Number(d.size.w), h: Number(d.size.h) } })
+          if (d && d.dockW) ui.set({ dockW: Number(d.dockW) })
+          if (d && d.snap) ui.set({ snap: d.snap })
+          if (d && d.tab) ui.set({ tab: d.tab })
+          ui.set({ minimized: !!(d && d.minimized), hydrated: true })
+        }).catch(function () { ui.set({ hydrated: true }) })
+        const offUi = ui.subscribe(function () {
+          force(function (x) { return x + 1 })
+          if (ui.hydrated) saveUi()
+        })
+        const offBus = bus.on(function (ev) {
+          if (ev === 'open') { ui.set({ closed: false, minimized: false, mode: 'floating' }) }
+        })
+        return function () { alive = false; offUi(); offBus() }
+      }, [])
+
+      if (ui.mode !== 'floating' || ui.closed || !ui.hydrated) return null
+      const s = ui.size
+
+      // 拖拽
+      function onTitleDown(e) {
+        if (e.pointerType === 'mouse' && e.button !== 0) return
+        const baseX = ui.pos ? ui.pos.x : e.clientX
+        const baseY = ui.pos ? ui.pos.y : e.clientY
+        dragRef = { dx: e.clientX - baseX, dy: e.clientY - baseY }
+        ui.set({ snap: null })
+        try { e.currentTarget.setPointerCapture(e.pointerId) } catch (err) { /* ignore */ }
+      }
+      function onTitleMove(e) {
+        if (!dragRef) return
+        ui.set({ pos: { x: Math.max(4, e.clientX - dragRef.dx), y: Math.max(4, e.clientY - dragRef.dy) } })
+      }
+      function onTitleUp(e) {
+        dragRef = null
+        try { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId) } catch (err) { /* ignore */ }
+        snapCheck()
+      }
+      // 边缘磁吸：拖放终点靠近任一屏幕角 → 吸附
+      function snapCheck() {
+        const vp = viewport()
+        const p = ui.pos
+        if (!vp || !p) return
+        const corners = [
+          { key: 'tl', x: 8, y: 8 },
+          { key: 'tr', x: vp.w - s.w - 8, y: 8 },
+          { key: 'bl', x: 8, y: vp.h - s.h - 8 },
+          { key: 'br', x: vp.w - s.w - 8, y: vp.h - s.h - 8 }
+        ]
+        let best = null, bestD = 110
+        for (let i = 0; i < corners.length; i++) {
+          const c = corners[i]
+          const d = Math.sqrt(Math.pow(p.x - c.x, 2) + Math.pow(p.y - c.y, 2))
+          if (d < bestD) { bestD = d; best = c }
+        }
+        ui.set({ pos: best ? { x: Math.max(0, best.x), y: Math.max(0, best.y) } : p, snap: best ? best.key : null })
+      }
+      // 一键贴右下角 / 解除
+      function toggleSnap() {
+        const vp = viewport()
+        if (ui.snap === 'br') { ui.set({ snap: null }); return }
+        if (vp) { ui.set({ snap: 'br', pos: { x: Math.max(0, vp.w - s.w - 8), y: Math.max(0, vp.h - s.h - 8) } }) }
+        else { ui.set({ snap: 'br', pos: null }) }
+      }
+      // 缩放（右下角手柄）
+      function onRsDown(e) {
+        if (e.pointerType === 'mouse' && e.button !== 0) return
+        resizeRef = { w: s.w, h: s.h, x: e.clientX, y: e.clientY }
+        try { e.currentTarget.setPointerCapture(e.pointerId) } catch (err) { /* ignore */ }
+      }
+      function onRsMove(e) {
+        if (!resizeRef) return
+        const w = Math.min(Math.max(460, resizeRef.w + (e.clientX - resizeRef.x)), 1100)
+        const h = Math.min(Math.max(380, resizeRef.h + (e.clientY - resizeRef.y)), 1000)
+        ui.set({ size: { w: w, h: h }, snap: null })
+      }
+      function onRsUp(e) {
+        resizeRef = null
+        try { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId) } catch (err) { /* ignore */ }
+      }
+
+      const dragProps = { onPointerDown: onTitleDown, onPointerMove: onTitleMove, onPointerUp: onTitleUp, onPointerCancel: onTitleUp }
+      const rsProps = { onPointerDown: onRsDown, onPointerMove: onRsMove, onPointerUp: onRsUp, onPointerCancel: onRsUp }
+
+      // 最小化条
+      if (ui.minimized) {
+        const idxLine = fIdx.map(function (q) {
+          return q.name + ' ' + fmt(q.current) + ' ' + fmtPct(q.percent)
+        }).join(' · ')
+        const minStyle = ui.pos ? { left: ui.pos.x, top: ui.pos.y, right: 'auto', bottom: 'auto' } : null
+        return el('div', { className: 'xq-float xq-min', style: minStyle, ...dragProps, onClick: function () { ui.set({ minimized: false }) } }, [
+          el('span', { key: 'logo', className: 'xq-logo' }, [el('b', { key: 'b' }, '雪球'), ' mini']),
+          el('span', { key: 'sum', className: 'xq-sum' }, idxLine || '点击展开行情面板'),
+          el('span', { key: 'sp', className: 'xq-spacer' }),
+          el('button', { key: 'x', className: 'xq-btn-mini', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); ui.set({ closed: true }) } }, '✕'),
+          el('span', { key: 'caret', className: 'xq-caret' }, '展开 ▾')
+        ])
+      }
+
+      const titleBar = el('div', { className: 'xq-title', ...dragProps }, [
+        el('span', { key: 'logo', className: 'xq-logo' }, [el('b', { key: 'b' }, '雪球'), ' mini']),
+        el('span', { key: 'st', className: 'xq-status' + (fOpen ? ' xq-live' : '') }, fOpen ? '● 盘中' : '已收盘'),
+        el('span', { key: 'upd', className: 'xq-update' }, '拖拽移动 · 松手吸附角落'),
+        el('span', { key: 'sp', className: 'xq-spacer' }),
+        el('button', { key: 'snap', className: 'xq-btn-mini', title: ui.snap === 'br' ? '解除右下角吸附' : '吸附到右下角', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); toggleSnap() } }, ui.snap === 'br' ? '📌' : '📍'),
+        el('button', { key: 'dock', className: 'xq-btn-mini', title: '嵌入到输入框上方（不遮挡对话）', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); ui.set({ mode: 'docked', minimized: false }) } }, '嵌入'),
+        el('button', { key: 'min', className: 'xq-btn-mini', title: '收起', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); ui.set({ minimized: true }) } }, '—'),
+        el('button', { key: 'cls', className: 'xq-btn-mini', title: '关闭（点底部指数条重新打开）', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); ui.set({ closed: true }) } }, '✕')
+      ])
+
+      return el('div', { className: 'xq-float' + (ui.snap ? ' xq-snapped' : ''), style: posStyle() }, [
         titleBar,
-        el('div', { key: 'body', className: 'xq-body' }, [tabs, errBox, content])
+        el('div', { key: 'body', className: 'xq-body' }, [
+          el(XueqiuPanel, null)
+        ]),
+        el('div', { key: 'rs', className: 'xq-resize', ...rsProps })
       ])
     }
+
+    // ---------- 嵌入外壳（conversation.input.dock）：输入框上方，不遮挡对话 ----------
+    function DockedShell() {
+      const [, force] = React.useState(0)
+      React.useEffect(function () {
+        const off = ui.subscribe(function () { force(function (x) { return x + 1 }) })
+        return off
+      }, [])
+      if (ui.mode !== 'docked' || !ui.hydrated) return null
+
+      function onDwDown(e) {
+        if (e.pointerType === 'mouse' && e.button !== 0) return
+        resizeRef = { w: ui.dockW, h: 0, x: e.clientX, y: e.clientY }
+        try { e.currentTarget.setPointerCapture(e.pointerId) } catch (err) { /* ignore */ }
+      }
+      function onDwMove(e) {
+        if (!resizeRef) return
+        ui.set({ dockW: Math.min(Math.max(480, resizeRef.w + (e.clientX - resizeRef.x)), 1100) })
+      }
+      function onDwUp(e) {
+        resizeRef = null
+        try { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId) } catch (err) { /* ignore */ }
+      }
+
+      if (ui.minimized) {
+        return el('div', { className: 'xq-docked xq-docked-min', style: { width: ui.dockW }, onClick: function () { ui.set({ minimized: false }) } }, [
+          el('span', { key: 'logo', className: 'xq-logo' }, [el('b', { key: 'b' }, '雪球'), ' mini']),
+          el('span', { key: 'sum', className: 'xq-sum' }, '点击展开行情面板'),
+          el('span', { key: 'sp', className: 'xq-spacer' }),
+          el('span', { key: 'caret', className: 'xq-caret' }, '展开 ▾')
+        ])
+      }
+
+      return el('div', { className: 'xq-docked', style: { width: ui.dockW } }, [
+        el('div', { key: 'title', className: 'xq-title' }, [
+          el('span', { key: 'logo', className: 'xq-logo' }, [el('b', { key: 'b' }, '雪球'), ' mini']),
+          el('span', { key: 'hint', className: 'xq-update' }, '已嵌入 · 不遮挡对话'),
+          el('span', { key: 'sp', className: 'xq-spacer' }),
+          el('button', { key: 'float', className: 'xq-btn-mini', title: '切换回悬浮模式', onClick: function () { ui.set({ mode: 'floating', minimized: false }) } }, '悬浮'),
+          el('button', { key: 'min', className: 'xq-btn-mini', title: '收起', onClick: function () { ui.set({ minimized: true }) } }, '—')
+        ]),
+        el('div', { key: 'body', className: 'xq-body' }, [
+          el(XueqiuPanel, null)
+        ]),
+        el('div', { key: 'rs', className: 'xq-resize xq-resize-w', onPointerDown: onDwDown, onPointerMove: onDwMove, onPointerUp: onDwUp, onPointerCancel: onDwUp })
+      ])
+    }
+
+    function posStyle() {
+      if (ui.pos) return { left: ui.pos.x, top: ui.pos.y, right: 'auto', bottom: 'auto', width: ui.size.w, height: ui.size.h }
+      return { width: ui.size.w, height: ui.size.h }
+    }
+
+    // ---------- 输入框上方入口条（仅悬浮模式下显示） ----------
+    function Entry() {
+      const [indices, setIndices] = React.useState([])
+      const [, force] = React.useState(0)
+      React.useEffect(function () {
+        let alive = true
+        function refresh() {
+          call('quote', { symbols: ['SH000001', 'SZ399001', 'SZ399006', 'SH000300'] }).then(function (data) {
+            if (alive) setIndices((data && data.list) || [])
+          }).catch(function () { /* 静默失败 */ })
+        }
+        refresh()
+        const off = ui.subscribe(function () { force(function (x) { return x + 1 }) })
+        const stop = ctx.interval(refresh, 60000)
+        return function () { alive = false; off(); if (stop) stop() }
+      }, [])
+      if (ui.mode === 'docked') return null
+      const line = indices.map(function (q) {
+        return q.name + ' ' + fmt(q.current) + ' ' + fmtPct(q.percent)
+      }).join(' · ')
+      return el('div', { className: 'xq-entry', onClick: function () { bus.emit('open') } }, [
+        el('span', { key: 'logo', className: 'xq-logo' }, [el('b', { key: 'b' }, '雪球'), ' mini']),
+        el('span', { key: 'sum', className: 'xq-sum' }, line || '点击打开行情面板'),
+        el('span', { key: 'caret', className: 'xq-caret' }, '打开 ▾')
+      ])
+    }
+
+    // ---------- 底部指数条 ----------
+    function Ticker() {
+      const [indices, setIndices] = React.useState([])
+      React.useEffect(function () {
+        let alive = true
+        function refresh() {
+          call('quote', { symbols: ['SH000001', 'SZ399001', 'SZ399006', 'SH000300'] }).then(function (data) {
+            if (alive) setIndices((data && data.list) || [])
+          }).catch(function () { /* 静默失败 */ })
+        }
+        refresh()
+        const stop = ctx.interval(refresh, 30000)
+        return function () { alive = false; if (stop) stop() }
+      }, [])
+      if (!indices.length) return null
+      const kids = indices.map(function (q) {
+        return el('span', { key: q.symbol, className: 'xq-tick' }, [
+          el('span', { key: 'n', className: 'xq-tick-name' }, q.name),
+          el('span', { key: 'c', className: 'xq-tick-cur ' + colorOf(q.percent) }, fmt(q.current)),
+          el('span', { key: 'p', className: colorOf(q.percent) }, fmtPct(q.percent))
+        ])
+      })
+      return el('div', { className: 'xq-ticker', onClick: function () { bus.emit('open') } }, kids)
+    }
+
+    // 追加样式：嵌入外壳 / 缩放手柄 / 磁吸动画
+    styles.insert(
+      '.xq-docked{background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-radius:10px;overflow:hidden;position:relative;font-size:13px;line-height:1.45;color:var(--dsw-alias-label-primary);margin-bottom:2px;}\n' +
+      '.xq-docked *{box-sizing:border-box;}\n' +
+      '.xq-docked-min{display:flex;align-items:center;gap:10px;cursor:pointer;padding:6px 12px;}\n' +
+      '.xq-docked .xq-title{cursor:default;}\n' +
+      '.xq-resize{position:absolute;right:2px;bottom:2px;width:18px;height:18px;cursor:nwse-resize;z-index:6;}\n' +
+      '.xq-resize::after{content:"";position:absolute;right:4px;bottom:4px;width:8px;height:8px;border-right:2px solid var(--dsw-alias-label-secondary);border-bottom:2px solid var(--dsw-alias-label-secondary);opacity:.55;}\n' +
+      '.xq-resize-w{position:absolute;right:0;top:0;bottom:0;width:10px;cursor:ew-resize;z-index:6;}\n' +
+      '.xq-resize-w::after{display:none;}\n' +
+      '.xq-snapped{transition:left .16s ease, top .16s ease;}\n'
+    )
 
     // ---------- 注册 ----------
     const slots = ctx.get('slots')
@@ -830,7 +998,7 @@ return {
     slots.inject('shell.overlay', function () {
       return slots.register(
         { name: 'shell.overlay', id: 'xueqiu-panel' },
-        function () { return el(Panel, null) }
+        function () { return el(FloatingShell, null) }
       )
     })
     slots.inject('conversation.input.dock', function () {
@@ -839,11 +1007,18 @@ return {
         function () { return el(Entry, null) }
       )
     })
+    slots.inject('conversation.input.dock', function () {
+      return slots.register(
+        { name: 'conversation.input.dock', id: 'xueqiu-docked', order: 31 },
+        function () { return el(DockedShell, null) }
+      )
+    })
     slots.inject('conversation.composer.dock', function () {
       return slots.register(
         { name: 'conversation.composer.dock', id: 'xueqiu-ticker', order: 1 },
         function () { return el(Ticker, null) }
       )
     })
+
   }
 }

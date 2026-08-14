@@ -385,7 +385,12 @@ return {
 
     async function actUiGet() {
       const s = await loadUiState()
-      return { pos: s.pos || null, tab: s.tab || 'market', minimized: !!s.minimized }
+      return {
+        mode: s.mode || 'floating', pos: s.pos || null,
+        size: (s.size && isFinite(Number(s.size.w)) && isFinite(Number(s.size.h))) ? { w: Number(s.size.w), h: Number(s.size.h) } : null,
+        dockW: s.dockW || null, snap: s.snap || null,
+        tab: s.tab || 'market', minimized: !!s.minimized
+      }
     }
 
     async function actUiSet(args) {
@@ -395,6 +400,12 @@ return {
       }
       if (args.tab !== undefined) s.tab = String(args.tab)
       if (args.minimized !== undefined) s.minimized = !!args.minimized
+      if (args.mode === 'floating' || args.mode === 'docked') s.mode = args.mode
+      if (args.size && typeof args.size === 'object' && isFinite(Number(args.size.w)) && isFinite(Number(args.size.h))) {
+        s.size = { w: Number(args.size.w), h: Number(args.size.h) }
+      }
+      if (args.dockW !== undefined && isFinite(Number(args.dockW))) s.dockW = Number(args.dockW)
+      if ('snap' in args && args.snap !== undefined) s.snap = args.snap === null ? null : String(args.snap)
       await saveUiState()
       return { ok: true }
     }

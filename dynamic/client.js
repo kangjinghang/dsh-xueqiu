@@ -348,6 +348,8 @@ return {
     // 拖拽 / 缩放用可变引用（实例唯一）
     let dragRef = null
     let resizeRef = null
+    let dragStart = null
+    let suppressSnap = false
 
     // ---------- 面板内容（数据 + tabs + 详情），由悬浮/嵌入外壳共用 ----------
     function XueqiuPanel() {
@@ -784,14 +786,11 @@ return {
       // 拖拽（贴靠状态下按下标题栏 → 解除贴靠回到自由）
       function onTitleDown(e) {
         if (e.pointerType === 'mouse' && e.button !== 0) return
+        dragStart = { x: e.clientX, y: e.clientY }
         if (ui.snapEdge) {
-          const vp = viewport()
-          if (vp) {
-            const x = ui.snapEdge === 'right' ? vp.w - ui.snapW : 0
-            ui.set({ snapEdge: null, pos: { x: x, y: 0 }, snap: null })
-          } else {
-            ui.set({ snapEdge: null, pos: { x: e.clientX - 60, y: e.clientY - 20 }, snap: null })
-          }
+          // 解除贴靠：面板从按下位置转为自由，本次松手不再磁吸
+          ui.set({ snapEdge: null, snap: null, pos: { x: e.clientX - 30, y: e.clientY - 16 } })
+          suppressSnap = true
         }
         const baseX = ui.pos ? ui.pos.x : e.clientX
         const baseY = ui.pos ? ui.pos.y : e.clientY
@@ -811,15 +810,18 @@ return {
         }
       }
       function onTitleUp(e) {
+        const moved = dragStart ? Math.sqrt(Math.pow(e.clientX - dragStart.x, 2) + Math.pow(e.clientY - dragStart.y, 2)) : 0
         dragRef = null
+        dragStart = null
         try { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId) } catch (err) { /* ignore */ }
+        if (suppressSnap) { suppressSnap = false; setDragTarget(null); return }
         if (dragTarget) {
           ui.set({ snapEdge: dragTarget, pos: null, snap: null, snapW: ui.snapW || 380 })
           setDragTarget(null)
           return
         }
         setDragTarget(null)
-        snapCheck()
+        if (moved >= 6) snapCheck()
       }
       // 四角磁吸：拖放终点靠近任一屏幕角 → 吸附
       function snapCheck() {
@@ -898,11 +900,11 @@ return {
         else if (ui.snapEdge === 'left') minStyle = { left: 0, top: 0, bottom: 0, width: ui.snapW, height: 'auto' }
         else if (ui.pos) minStyle = { left: ui.pos.x, top: ui.pos.y, right: 'auto', bottom: 'auto' }
         return el('div', { className: 'xq-wrap' }, [
-          el('div', { key: 'min', className: 'xq-float xq-min' + (ui.snapEdge ? ' xq-snapped' : ''), style: minStyle, ...dragProps, onClick: function () { ui.set({ minimized: false }) } }, [
+          el('div', { key: 'min', className: 'xq-float xq-min' + (ui.snapEdge ? ' xq-snapped' : ''), style: minStyle, onClick: function () { ui.set({ minimized: false }) } }, [
             el('span', { key: 'logo', className: 'xq-logo' }, [el('b', { key: 'b' }, '雪球'), ' mini']),
             el('span', { key: 'sum', className: 'xq-sum' }, idxLine || '点击展开行情面板'),
             el('span', { key: 'sp', className: 'xq-spacer' }),
-            el('button', { key: 'x', className: 'xq-btn-mini', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); ui.set({ closed: true }) } }, '✕'),
+            el('button', { key: 'x', className: 'xq-btn-mini', onClick: function (e) { e.stopPropagation(); ui.set({ closed: true }) } }, '✕'),
             el('span', { key: 'caret', className: 'xq-caret' }, '展开 ▾')
           ]),
           snapPreview

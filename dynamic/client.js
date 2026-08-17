@@ -5,7 +5,9 @@ return {
       '.xq-dock{background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-radius:10px;overflow:hidden;font-size:13px;line-height:1.45;color:var(--dsw-alias-label-primary);margin-bottom:6px;}\n' +
       '.xq-dock *{box-sizing:border-box;}\n' +
       '.xq-dock-head{display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid var(--dsw-alias-border-l1);}\n' +
-      '.xq-dock-body{max-height:56vh;overflow-y:auto;padding:8px 12px 10px;}\n' +
+      '.xq-dock-body{height:52vh;max-height:80vh;overflow-y:auto;padding:8px 12px 10px;}\n' +
+      '.xq-dock-resize{display:flex;align-items:center;justify-content:center;height:12px;cursor:ns-resize;user-select:none;border-top:1px solid var(--dsw-alias-border-l1);}\n' +
+      '.xq-dock-resize span{display:block;width:36px;height:3px;border-radius:2px;background:var(--dsw-alias-border-l2);}\n' +
       '.xq-badge{position:fixed;right:16px;bottom:64px;display:flex;align-items:center;gap:8px;padding:5px 12px;border-radius:999px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);box-shadow:0 6px 24px rgba(0,0,0,.25);font-size:11.5px;line-height:1.4;color:var(--dsw-alias-label-primary);cursor:grab;user-select:none;pointer-events:auto;z-index:1200;}\n' +
       '.xq-badge:active{cursor:grabbing;}\n' +
       '.xq-badge b{color:var(--dsw-alias-brand-primary);}\n' +
@@ -171,7 +173,7 @@ return {
 
     // ---------- 共享 UI 状态：面板开合 / 当前标签 / 徽章位置 ----------
     const ui = {
-      open: false, tab: 'market', badgePos: null, hydrated: false,
+      open: false, tab: 'market', badgePos: null, dockH: null, hydrated: false,
       _fns: [],
       subscribe: function (fn) {
         this._fns.push(fn)
@@ -195,12 +197,15 @@ return {
     }
 
     const saveUi = ctx.debounce(function () {
-      call('ui.set', { tab: ui.tab, open: ui.open, badgePos: ui.badgePos }).catch(function () { /* 忽略 */ })
+      call('ui.set', { tab: ui.tab, open: ui.open, badgePos: ui.badgePos, dockH: ui.dockH }).catch(function () { /* 忽略 */ })
     }, 800)
 
     // 徽章拖拽引用（实例唯一）
     let badgeDrag = null
     let badgeMoved = false
+
+    // 面板高度拖拽引用（实例唯一，避免组件重渲染丢失状态）
+    const dockResize = { active: false, startY: 0, startH: 0 }
 
     // ---------- K线蜡烛图（成交量 + 均线 + 十字光标/悬浮详情） ----------
     function KlineChart(props) {
@@ -856,6 +861,9 @@ return {
           if (d && d.badgePos && isFinite(Number(d.badgePos.x)) && isFinite(Number(d.badgePos.y))) {
             ui.set({ badgePos: { x: Number(d.badgePos.x), y: Number(d.badgePos.y) } })
           }
+          if (d && typeof d.dockH === 'number' && isFinite(d.dockH)) {
+            ui.set({ dockH: d.dockH })
+          }
           ui.set({ hydrated: true })
         }).catch(function () { ui.set({ hydrated: true }) })
         const off = ui.subscribe(function () { force(function (x) { return x + 1 }) })
@@ -866,10 +874,35 @@ return {
     }
 
     function DockPanel() {
+      const [, force] = React.useState(0)
       React.useEffect(function () {
-        const off = ui.subscribe(function () { if (ui.hydrated) saveUi() })
+        const off = ui.subscribe(function () { if (ui.hydrated) saveUi(); force(function (x) { return x + 1 }) })
         return off
       }, [])
+      function onDown(e) {
+        if (e.pointerType === 'mouse' && e.button !== 0) return
+        dockResize.active = true
+        dockResize.startY = e.clientY
+        dockResize.startH = ui.dockH || defaultDockH()
+        try { e.currentTarget.setPointerCapture(e.pointerId) } catch (err) { /* ignore */ }
+      }
+      function onMove(e) {
+        if (!dockResize.active) return
+        const vp = viewport()
+        const maxH = Math.round((vp ? vp.h : 800) * 0.85)
+        let h = dockResize.startH + (e.clientY - dockResize.startY)
+        h = Math.min(Math.max(160, h), Math.min(maxH, 1200))
+        ui.set({ dockH: h })
+      }
+      function onUp(e) {
+        dockResize.active = false
+        try { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId) } catch (err) { /* ignore */ }
+      }
+      function defaultDockH() {
+        try { if (typeof window !== 'undefined' && window.innerHeight) return Math.round(window.innerHeight * 0.52) } catch (e) { /* ignore */ }
+        return 420
+      }
+      const bodyStyle = ui.dockH ? { height: ui.dockH + 'px' } : null
       return el('div', { className: 'xq-dock' }, [
         el('div', { key: 'head', className: 'xq-dock-head' }, [
           el('span', { key: 'logo', className: 'xq-logo' }, [el('b', { key: 'b' }, '雪球'), ' mini']),
@@ -878,9 +911,14 @@ return {
           el('span', { key: 'sp', className: 'xq-spacer' }),
           el('button', { key: 'min', className: 'xq-btn-mini', title: '收起（点右下角徽章重新打开）', onClick: function () { ui.set({ open: false }) } }, '收起 —')
         ]),
-        el('div', { key: 'body', className: 'xq-dock-body' }, [
+        el('div', { key: 'body', className: 'xq-dock-body', style: bodyStyle }, [
           el(XueqiuPanel, { key: 'panel' })
-        ])
+        ]),
+        el('div', {
+          key: 'rs', className: 'xq-dock-resize', title: '拖动调整面板高度（双击复位）',
+          onPointerDown: onDown, onPointerMove: onMove, onPointerUp: onUp, onPointerCancel: onUp,
+          onDoubleClick: function () { ui.set({ dockH: null }) }
+        }, [el('span', { key: 'g' }, null)])
       ])
     }
 

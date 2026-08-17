@@ -464,9 +464,11 @@ return {
 
     async function actUiGet() {
       const s = await loadUiState()
+      const hNum = Number(s.dockH)
       return {
         tab: s.tab || 'market', open: s.open !== false,
-        badgePos: (s.badgePos && isFinite(Number(s.badgePos.x)) && isFinite(Number(s.badgePos.y)))
+        dockH: (s.dockH !== undefined && isFinite(hNum) && hNum >= 160 && hNum <= 1200) ? hNum : null,
+        badgePos: (s.badgePos && isFinite(Number(s.badgePos.x)) && isFinite(Number(s.badgePos.y())))
           ? { x: Number(s.badgePos.x), y: Number(s.badgePos.y) } : null
       }
     }
@@ -477,6 +479,10 @@ return {
       if (args.open !== undefined) s.open = !!args.open
       if (args.badgePos && typeof args.badgePos === 'object' && isFinite(Number(args.badgePos.x)) && isFinite(Number(args.badgePos.y))) {
         s.badgePos = { x: Number(args.badgePos.x), y: Number(args.badgePos.y) }
+      }
+      if (args.dockH !== undefined) {
+        const dh = Number(args.dockH)
+        if (isFinite(dh)) s.dockH = Math.min(Math.max(dh, 160), 1200)
       }
       await saveUiState()
       return { ok: true }

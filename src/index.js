@@ -1,5 +1,5 @@
 export default {
-
+  inject: ['timer'],
   apply(ctx) {
     const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     const BASE = 'https://stock.xueqiu.com'
@@ -9,6 +9,34 @@ export default {
     const state = { cookie: '' }
     let watchlist = null
     let uiState = null
+
+    // ---- 请求调度：串行队列 + 最小间隔闸门（雪球安全区：间隔 ≥2s 邻域，并发 1）----
+    const MIN_GAP_MS = 800
+    let queueTail = Promise.resolve()
+    let lastStart = 0
+
+    function delay(ms) { return new Promise(function (r) { ctx.timeout(r, ms) }) }
+
+    function gate(fn) {
+      const run = queueTail.then(async function () {
+        const wait = lastStart + MIN_GAP_MS - Date.now()
+        if (wait > 0) await delay(wait)
+        lastStart = Date.now()
+        return fn()
+      })
+      queueTail = run.then(function () { }, function () { })
+      return run
+    }
+
+    // ---- TTL 缓存 + in-flight 去重：同一 URL 在途请求共享同一个 Promise ----
+    const cache = new Map()   // key -> { at, value }
+    const inflight = new Map() // key -> Promise
+
+    function cacheGet(key, ttl) {
+      const e = cache.get(key)
+      if (e && ttl > 0 && Date.now() - e.at < ttl) return e.value
+      return undefined
+    }
 
     function enc(s) {
       try { return encodeURIComponent(String(s)) } catch (e) { return String(s) }
@@ -26,10 +54,13 @@ export default {
 
     function getShell() { return ctx.get('shell') }
 
+    let cookieSeeding = null
     async function ensureCookie(force) {
       if (state.cookie && !force) return state.cookie
+      if (cookieSeeding) return cookieSeeding // 并发去重：同一时刻只播种一次
       const shell = getShell()
       if (!shell) return ''
+      cookieSeeding = (async function () {
       // 雪球主域 302 → www.xueqiu.com，必须 -L 跟随才能拿到 Set-Cookie
       const cmd = "curl -s -L --max-time 12 -D - -o /dev/null 'https://www.xueqiu.com/' -H 'User-Agent: " + UA + "'"
       const spec = shell.resolve({ command: cmd, timeoutMs: 15000, stdoutMaxBytes: 65536 })
@@ -42,10 +73,14 @@ export default {
         const m = /^set-cookie:\s*([^=;\s]+)=([^;]*)/i.exec(lines[i].trim())
         if (m && !seen[m[1]]) { seen[m[1]] = true; pairs.push(m[1] + '=' + m[2]) }
       }
-      // kline 端点要求 cookie 里存在 u=<id>（值任意）；无登录态时补一个随机 u
+      // kline 端点要求 cookie 里存在 u=<id>；优先用种子响应里的真实 u，缺失才补随机值
       if (!seen.u) pairs.push('u=' + String(Date.now()) + String(Math.floor(Math.random() * 1e6)))
       state.cookie = pairs.join('; ')
       return state.cookie
+      })()
+      const r = cookieSeeding
+      r.then(function () { cookieSeeding = null }, function () { cookieSeeding = null })
+      return r
     }
 
     async function curl(url) {
@@ -66,26 +101,63 @@ export default {
       return String(result.stdout.text || '')
     }
 
-    async function getJSON(path, params, base, depth) {
-      const url = (base || BASE) + path + toQuery(params || {})
-      let text = await curl(url)
-      if (!text && state.cookie) {
-        await ensureCookie(true)
-        text = await curl(url)
-      }
-      if (!text) throw new Error('雪球返回空响应（可能被风控，稍后再试）')
-      let data
-      try { data = JSON.parse(text) } catch (e) { throw new Error('雪球响应解析失败: ' + text.slice(0, 120)) }
-      if (data && data.error_code && data.error_code !== 0) {
-        const code = String(data.error_code)
-        const desc = (data.error_description || ('雪球错误 ' + code)).slice(0, 120)
-        if (code === '400016' && depth < 2) {
-          await ensureCookie(true)
-          return getJSON(path, params, base, (depth || 0) + 1)
+    // ---- 错误分类：cookie_expired / rate_limited / parse / network / empty ----
+    function classifyError(data) {
+      if (!data || !data.error_code || data.error_code === 0) return null
+      const code = String(data.error_code)
+      const desc = String(data.error_description || '')
+      if (code === '400016') return { kind: 'cookie_expired', code: code, desc: desc || 'Cookie 失效', retryable: true }
+      if (/频繁|频率|too many|429/i.test(desc) || code === '400017') return { kind: 'rate_limited', code: code, desc: desc || '请求过于频繁', retryable: true }
+      return { kind: 'api', code: code, desc: desc || ('雪球错误 ' + code), retryable: false }
+    }
+
+    async function getJSON(path, params, opts) {
+      opts = opts || {}
+      const url = (opts.base || BASE) + path + toQuery(params || {})
+      const ttl = opts.ttl || 0
+
+      async function attempt(depth) {
+        const err = await (async function () {
+          let text
+          try { text = await curl(url) } catch (e) { return { kind: 'network', message: e.message, retryable: depth < 1 } }
+          if (!text) return { kind: 'empty', message: '雪球返回空响应（可能被风控）', retryable: true }
+          let data
+          try { data = JSON.parse(text) } catch (e) { return { kind: 'parse', message: '响应解析失败: ' + text.slice(0, 120), retryable: false } }
+          const cls = classifyError(data)
+          if (cls) return { kind: cls.kind, message: cls.desc, code: cls.code, retryable: cls.retryable }
+          // kline 陷阱：缺 u cookie 时返回 200 + 空 items 且无 column（静默失败）
+          const d = data && data.data
+          if (path.indexOf('/chart/kline') !== -1 && d && typeof d === 'object'
+            && !Array.isArray(d.column) && String(d.items_size || '0') === '0') {
+            return { kind: 'empty_kline', message: 'kline 空数据（cookie 种子可能不完整）', retryable: true }
+          }
+          return { data: data }
+        })()
+
+        if (!err.kind) return err.data
+        if (!err.retryable || depth >= 2) throw new Error('[' + err.kind + '] ' + err.message)
+
+        if (err.kind === 'cookie_expired' || err.kind === 'empty' || err.kind === 'empty_kline') {
+          await ensureCookie(true)   // 重新播种 cookie 后再试
+        } else if (err.kind === 'rate_limited') {
+          await delay(2000 * (depth + 1)) // 指数退避：2s → 4s
+        } else if (err.kind === 'network') {
+          await delay(500)
         }
-        throw new Error(desc)
+        return attempt(depth + 1)
       }
-      return data
+
+      const hit = cacheGet(url, ttl)
+      if (hit !== undefined) return Promise.resolve(hit)
+      const pending = inflight.get(url)
+      if (pending) return pending
+      const p = gate(function () { return attempt(0) }).then(function (data) {
+        if (ttl > 0) cache.set(url, { at: Date.now(), value: data })
+        return data
+      })
+      p.then(function () { inflight.delete(url) }, function () { inflight.delete(url) })
+      inflight.set(url, p)
+      return p
     }
 
     // ---- data normalizers ----
@@ -185,7 +257,7 @@ export default {
       const symbols = Array.isArray(args.symbols) ? args.symbols : [String(args.symbols || '')]
       const list = symbols.filter(function (s) { return /^[A-Za-z0-9_.]+$/.test(s) })
       if (!list.length) return { list: [], status: null }
-      const data = await getJSON('/v5/stock/batch/quote.json', { symbol: list.join(',') })
+      const data = await getJSON('/v5/stock/batch/quote.json', { symbol: list.join(',') }, { ttl: 10000 })
       const items = (data && data.data && data.data.items) || []
       const first = items[0]
       const status = first && first.market ? first.market.status_id : null
@@ -197,7 +269,7 @@ export default {
 
     async function actQuoteDetail(args) {
       const symbol = String(args.symbol || '')
-      const data = await getJSON('/v5/stock/quote.json', { symbol: symbol, extend: 'detail' })
+      const data = await getJSON('/v5/stock/quote.json', { symbol: symbol, extend: 'detail' }, { ttl: 15000 })
       return { quote: pickQuote(data.data && data.data.quote), market: data.data && data.data.market }
     }
 
@@ -205,16 +277,18 @@ export default {
       const period = String(args.period || 'day')
       const count = Math.min(Math.max(parseInt(args.count, 10) || 120, 5), 500)
       const symbol = String(args.symbol || '')
+      // begin 按分钟取整，保证 TTL 窗口内缓存 key 稳定（count 为负，返回的是最近 N 根）
+      const begin = Math.floor(Date.now() / 60000) * 60000
       const data = await getJSON('/v5/stock/chart/kline.json', {
-        symbol: symbol, period: period, type: 'before', begin: Date.now(),
+        symbol: symbol, period: period, type: 'before', begin: begin,
         count: -count, indicator: 'kline,pe,pb,ps,pcf,market_capital'
-      })
+      }, { ttl: period === 'day' ? 300000 : 30000 })
       return mapKline(data)
     }
 
     async function actMinute(args) {
       const symbol = String(args.symbol || '')
-      const data = await getJSON('/v5/stock/chart/minute.json', { symbol: symbol, period: '1d' })
+      const data = await getJSON('/v5/stock/chart/minute.json', { symbol: symbol, period: '1d' }, { ttl: 10000 })
       const d = data && data.data ? data.data : null
       if (!d || !d.items) return { last_close: null, items: [] }
       return {
@@ -229,7 +303,7 @@ export default {
       const market = String(args.market || 'cn')
       const typeMap = { global: 10, us: 11, cn: 12, hk: 13 }
       const size = Math.min(Math.max(parseInt(args.size, 10) || 10, 1), 30)
-      const data = await getJSON('/v5/stock/hot_stock/list.json', { type: typeMap[market] || 12, size: size })
+      const data = await getJSON('/v5/stock/hot_stock/list.json', { type: typeMap[market] || 12, size: size }, { ttl: 300000 })
       const items = (data && data.data && data.data.items) || []
       return {
         list: items.map(function (it) {
@@ -241,7 +315,7 @@ export default {
     async function actSearch(args) {
       const q = String(args.q || '')
       if (!q) return { list: [] }
-      const data = await getJSON('/query/v1/suggest_stock.json', { q: q, count: Math.min(parseInt(args.count, 10) || 8, 20) }, SITE)
+      const data = await getJSON('/query/v1/suggest_stock.json', { q: q, count: Math.min(parseInt(args.count, 10) || 8, 20) }, { base: SITE, ttl: 60000 })
       const list = (data && data.data) || []
       return {
         list: list.map(function (it) {
@@ -253,13 +327,13 @@ export default {
     async function actSearchPosts(args) {
       const q = String(args.q || '')
       if (!q) return { list: [] }
-      const data = await getJSON('/query/v1/search/status.json', { q: q, count: Math.min(parseInt(args.count, 10) || 10, 30) }, SITE)
+      const data = await getJSON('/query/v1/search/status.json', { q: q, count: Math.min(parseInt(args.count, 10) || 10, 30) }, { base: SITE, ttl: 120000 })
       return { list: mapPosts(data && data.list) }
     }
 
     async function actNews(args) {
       const count = Math.min(Math.max(parseInt(args.count, 10) || 20, 1), 50)
-      const data = await getJSON('/statuses/livenews/list.json', { since_id: -1, max_id: -1, count: count }, SITE)
+      const data = await getJSON('/statuses/livenews/list.json', { since_id: -1, max_id: -1, count: count }, { base: SITE, ttl: 120000 })
       const items = (data && data.items) || []
       return {
         items: items.map(function (it) {
@@ -271,14 +345,14 @@ export default {
     async function actKOL(args) {
       const symbol = String(args.symbol || '')
       const count = Math.min(Math.max(parseInt(args.count, 10) || 8, 1), 20)
-      const data = await getJSON('/recommend/user/stock_hot_user.json', { symbol: symbol, start: 0, count: count }, SITE)
+      const data = await getJSON('/recommend/user/stock_hot_user.json', { symbol: symbol, start: 0, count: count }, { base: SITE, ttl: 3600000 })
       return { list: mapKOL(data) }
     }
 
     async function actUser(args) {
       const userId = String(args.userId || args.id || '')
       if (!userId) return { user: null, posts: [] }
-      const data = await getJSON('/statuses/user_timeline.json', { user_id: userId, page: 1, count: Math.min(parseInt(args.count, 10) || 10, 30) }, SITE)
+      const data = await getJSON('/statuses/user_timeline.json', { user_id: userId, page: 1, count: Math.min(parseInt(args.count, 10) || 10, 30) }, { base: SITE, ttl: 300000 })
       const statuses = (data && data.statuses) || []
       const first = statuses[0]
       return {
@@ -293,7 +367,7 @@ export default {
 
     async function actFinance(args) {
       const symbol = String(args.symbol || '')
-      const data = await getJSON('/v5/stock/finance/cn/indicator.json', { symbol: symbol, type: 'all', is_detail: 'true', count: 4 })
+      const data = await getJSON('/v5/stock/finance/cn/indicator.json', { symbol: symbol, type: 'all', is_detail: 'true', count: 4 }, { ttl: 86400000 })
       const d = data && data.data ? data.data : null
       return {
         quote_name: d ? d.quote_name : null, last_report_name: d ? d.last_report_name : null,

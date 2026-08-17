@@ -1,6 +1,5 @@
-export default {
-
-  inject: ['timer', 'connection'],
+return {
+  inject: ['timer'],
   apply(ctx) {
     styles.insert('\n' +
       '.xq-dock{background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-radius:10px;overflow:hidden;font-size:13px;line-height:1.45;color:var(--dsw-alias-label-primary);margin-bottom:6px;}\n' +
@@ -103,9 +102,9 @@ export default {
     function el(type, props, children) { return React.createElement(type, props, children) }
 
     async function call(action, args) {
-      const res = await ctx.connection.rpc.call('/xueqiu', 'call', { action: action, args: args || {} })
-      if (!res || !res.ok) throw new Error((res && (res.error && (res.error.message || res.error.code) || res.error)) || '调用失败')
-      return res.value
+      const r = await host.call('xq.call', { action: action, args: args || {} })
+      if (!r || !r.ok) throw new Error((r && r.error) || '调用失败')
+      return r.data
     }
 
     function fmt(v, d) {

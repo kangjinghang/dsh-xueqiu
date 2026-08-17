@@ -205,7 +205,7 @@ return {
     let badgeMoved = false
 
     // 面板高度拖拽引用（实例唯一，避免组件重渲染丢失状态）
-    const dockResize = { active: false, startY: 0, startH: 0 }
+    const dockResize = { active: false, startY: 0, startH: 0, h: 0, body: null }
 
     // ---------- K线蜡烛图（成交量 + 均线 + 十字光标/悬浮详情） ----------
     function KlineChart(props) {
@@ -884,18 +884,35 @@ return {
         dockResize.active = true
         dockResize.startY = e.clientY
         dockResize.startH = ui.dockH || defaultDockH()
+        // 拖动期间直改 DOM（不触发 React 重渲染），松手才提交一次状态
+        try {
+          const dock = e.currentTarget.closest('.xq-dock')
+          dockResize.body = dock ? dock.querySelector('.xq-dock-body') : null
+          if (dockResize.body) dockResize.body.style.transition = 'none'
+          document.body.style.cursor = 'ns-resize'
+          document.body.style.userSelect = 'none'
+        } catch (err) { /* ignore */ }
         try { e.currentTarget.setPointerCapture(e.pointerId) } catch (err) { /* ignore */ }
       }
       function onMove(e) {
-        if (!dockResize.active) return
+        if (!dockResize.active || !dockResize.body) return
         const vp = viewport()
         const maxH = Math.round((vp ? vp.h : 800) * 0.85)
         let h = dockResize.startH + (e.clientY - dockResize.startY)
         h = Math.min(Math.max(160, h), Math.min(maxH, 1200))
-        ui.set({ dockH: h })
+        dockResize.h = h
+        dockResize.body.style.height = h + 'px'   // 直接写样式，逐帧零渲染
       }
       function onUp(e) {
+        if (dockResize.active && dockResize.body) {
+          dockResize.body.style.transition = ''
+          dockResize.body.style.height = ''
+          document.body.style.cursor = ''
+          document.body.style.userSelect = ''
+          if (dockResize.h) ui.set({ dockH: dockResize.h })   // 松手一次性提交
+        }
         dockResize.active = false
+        dockResize.h = 0
         try { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId) } catch (err) { /* ignore */ }
       }
       function defaultDockH() {
@@ -961,12 +978,23 @@ return {
         let y = e.clientY - h / 2
         x = Math.min(Math.max(4, x), (vp ? vp.w : 1200) - w - 4)
         y = Math.min(Math.max(4, y), (vp ? vp.h : 800) - h - 4)
-        ui.set({ badgePos: { x: x, y: y } })
+        badgeDrag.x = x + w / 2
+        badgeDrag.y = y + h / 2
+        // 拖动期间直改 DOM，松手才提交状态（避免逐帧全订阅重渲染）
+        e.currentTarget.style.left = x + 'px'
+        e.currentTarget.style.top = y + 'px'
+        e.currentTarget.style.right = 'auto'
+        e.currentTarget.style.bottom = 'auto'
+        badgeDrag.pos = { x: x, y: y }
       }
       function onUp(e) {
+        const moved = badgeMoved
+        const pos = badgeDrag ? badgeDrag.pos : null
         badgeDrag = null
+        badgeMoved = false
         try { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId) } catch (err) { /* ignore */ }
-        if (!badgeMoved) ui.set({ open: !ui.open })
+        if (!moved) { ui.set({ open: !ui.open }); return }
+        if (pos) ui.set({ badgePos: pos })   // 松手一次性提交
       }
 
       const sh = idx[0], sz = idx[1]

@@ -72,6 +72,11 @@ return {
       '.xq-periods button,.xq-modes button{font-size:11.5px;border:none;background:none;color:var(--dsw-alias-label-secondary);padding:2px 9px;border-radius:5px;cursor:pointer;}\n' +
       '.xq-periods button.xq-on,.xq-modes button.xq-on{background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);font-weight:600;}\n' +
       '.xq-chart{width:100%;height:auto;display:block;}\n' +
+      '.xq-chart-wrap{position:relative;}\n' +
+      '.xq-tip{position:absolute;top:4px;z-index:5;pointer-events:none;background:var(--dsw-alias-bg-overlay);border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:4px 8px;font-size:10.5px;line-height:1.6;color:var(--dsw-alias-label-primary);box-shadow:0 4px 14px rgba(0,0,0,.28);white-space:nowrap;}\n' +
+      '.xq-tip-d{font-weight:700;}\n' +
+      '.xq-tip-r{display:flex;gap:8px;}\n' +
+      '.xq-tip-k{color:var(--dsw-alias-label-secondary);}\n' +
       '.xq-chart-labels{display:flex;justify-content:space-between;font-size:10.5px;color:var(--dsw-alias-label-secondary);margin-top:2px;}\n' +
       '.xq-ma-legend{display:flex;gap:10px;font-size:10.5px;color:var(--dsw-alias-label-secondary);}\n' +
       '.xq-kol{display:flex;flex-wrap:wrap;gap:6px;}\n' +
@@ -141,6 +146,12 @@ return {
       function p(n) { return n < 10 ? '0' + n : String(n) }
       return p(d.getMonth() + 1) + '-' + p(d.getDate())
     }
+    function fmtFullDay(ts) {
+      if (!ts) return ''
+      const d = new Date(Number(ts))
+      function p(n) { return n < 10 ? '0' + n : String(n) }
+      return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate())
+    }
     function colorOf(pct) {
       if (pct === null || pct === undefined) return 'xq-flat'
       const n = Number(pct)
@@ -171,17 +182,18 @@ return {
 
     // （saveUi / dragRef / ui 共享状态见下方新块）
 
-    // ---------- K线蜡烛图（含成交量与均线） ----------
+    // ---------- K线蜡烛图（含成交量与均线 + 十字光标/悬浮详情） ----------
     function KlineChart(props) {
       const rows = props.rows || []
+      const [hi, setHi] = React.useState(null)
       if (!rows.length) return el('div', { className: 'xq-muted' }, '暂无K线数据')
       const W = 640, MAIN = 150, VOL = 44, PAD = 6, GAP = 4
       const H = MAIN + VOL + GAP + PAD
       let min = Infinity, max = -Infinity
       for (let i = 0; i < rows.length; i++) {
-        const lo = Number(rows[i].low), hi = Number(rows[i].high)
-        if (lo < min) min = lo
-        if (hi > max) max = hi
+        const rlo = Number(rows[i].low), rhi = Number(rows[i].high)
+        if (rlo < min) min = rlo
+        if (rhi > max) max = rhi
       }
       if (!isFinite(min) || !isFinite(max) || min === max) { min -= 1; max += 1 }
       const range = max - min
@@ -208,6 +220,7 @@ return {
         }
         return out
       }
+      const ma5 = maArr(5), ma10 = maArr(10), ma20 = maArr(20)
       function poly(arr, color) {
         const pts = []
         for (let i = 0; i < arr.length; i++) {
@@ -235,16 +248,62 @@ return {
         kids.push(el('rect', { key: 'v' + i, x: x - bw / 2, y: vBottom - vh, width: bw, height: vh, fill: color, opacity: 0.45 }))
       }
       const last = rows[n - 1]
-      return el('div', null, [
-        el('svg', { key: 's', className: 'xq-chart', viewBox: '0 0 ' + W + ' ' + H }, [
+      function onMove(e) {
+        const rect = e.currentTarget.getBoundingClientRect()
+        if (!rect || !rect.width) return
+        const px = (e.clientX - rect.left) / rect.width * W
+        let i = Math.floor((px - PAD) / step)
+        if (i < 0) i = 0
+        if (i > n - 1) i = n - 1
+        setHi(i)
+      }
+      // 十字光标 + 悬浮详情
+      let cross = null, tip = null
+      if (hi !== null && hi >= 0 && hi < n) {
+        const r = rows[hi]
+        const cx = PAD + step * hi + step / 2
+        const cy = yOf(Number(r.close))
+        cross = [
+          el('line', { key: 'cv', x1: cx, y1: PAD, x2: cx, y2: vBottom, stroke: 'var(--dsw-alias-label-secondary)', strokeWidth: 0.6, strokeDasharray: '3 3', opacity: 0.7 }),
+          el('line', { key: 'ch', x1: PAD, y1: cy, x2: W - PAD, y2: cy, stroke: 'var(--dsw-alias-label-secondary)', strokeWidth: 0.6, strokeDasharray: '3 3', opacity: 0.7 })
+        ]
+        tip = el('div', {
+          key: 'tip', className: 'xq-tip',
+          style: { left: (cx / W * 100) + '%', transform: cx > W * 0.55 ? 'translateX(calc(-100% - 10px))' : 'translateX(10px)' }
+        }, [
+          el('div', { key: 'd', className: 'xq-tip-d' }, fmtFullDay(r.timestamp)),
+          el('div', { key: 'r1', className: 'xq-tip-r' }, [
+            el('span', { key: 'a' }, [el('span', { key: 'k', className: 'xq-tip-k' }, '开 '), fmt(r.open)]),
+            el('span', { key: 'b' }, [el('span', { key: 'k', className: 'xq-tip-k' }, '高 '), fmt(r.high)]),
+            el('span', { key: 'c' }, [el('span', { key: 'k', className: 'xq-tip-k' }, '低 '), fmt(r.low)]),
+            el('span', { key: 'e', className: colorOf(r.percent) }, [el('span', { key: 'k', className: 'xq-tip-k' }, '收 '), fmt(r.close)])
+          ]),
+          el('div', { key: 'r2', className: 'xq-tip-r' }, [
+            el('span', { key: 'p', className: colorOf(r.percent) }, [el('span', { key: 'k', className: 'xq-tip-k' }, '涨跌 '), fmtPct(r.percent)]),
+            el('span', { key: 'v' }, [el('span', { key: 'k', className: 'xq-tip-k' }, '量 '), fmtVol(r.volume)])
+          ]),
+          el('div', { key: 'r3', className: 'xq-tip-r' }, [
+            el('span', { key: 'm5', style: { color: '#f59e0b' } }, 'MA5 ' + (ma5[hi] === null ? '--' : fmt(ma5[hi]))),
+            el('span', { key: 'm10', style: { color: '#3b82f6' } }, 'MA10 ' + (ma10[hi] === null ? '--' : fmt(ma10[hi]))),
+            el('span', { key: 'm20', style: { color: '#a855f7' } }, 'MA20 ' + (ma20[hi] === null ? '--' : fmt(ma20[hi])))
+          ])
+        ])
+      }
+      return el('div', { className: 'xq-chart-wrap' }, [
+        tip,
+        el('svg', {
+          key: 's', className: 'xq-chart', viewBox: '0 0 ' + W + ' ' + H,
+          onMouseMove: onMove, onMouseLeave: function () { setHi(null) }
+        }, [
           el('line', { key: 'base', x1: PAD, y1: vTop, x2: W - PAD, y2: vTop, stroke: 'var(--dsw-alias-border-l2)', strokeWidth: 1 }),
-          poly(maArr(5), '#f59e0b'),
-          poly(maArr(10), '#3b82f6'),
-          poly(maArr(20), '#a855f7'),
+          poly(ma5, '#f59e0b'),
+          poly(ma10, '#3b82f6'),
+          poly(ma20, '#a855f7'),
           kids,
-          el('text', { key: 'hi', x: PAD, y: 10, fontSize: 9, fill: 'var(--dsw-alias-label-secondary)' }, '高 ' + fmt(max)),
-          el('text', { key: 'lo', x: PAD, y: MAIN - 2, fontSize: 9, fill: 'var(--dsw-alias-label-secondary)' }, '低 ' + fmt(min)),
-          el('text', { key: 'last', x: W - PAD, y: Math.max(yOf(Number(last.close)) - 4, 10), fontSize: 9, fill: upColor(Number(last.close) >= Number(rows[n - 2] ? rows[n - 2].close : last.open)), textAnchor: 'end' }, fmt(last.close))
+          cross,
+          el('text', { key: 'hiT', x: PAD, y: 10, fontSize: 9, fill: 'var(--dsw-alias-label-secondary)' }, '高 ' + fmt(max)),
+          el('text', { key: 'loT', x: PAD, y: MAIN - 2, fontSize: 9, fill: 'var(--dsw-alias-label-secondary)' }, '低 ' + fmt(min)),
+          el('text', { key: 'lastT', x: W - PAD, y: Math.max(yOf(Number(last.close)) - 4, 10), fontSize: 9, fill: upColor(Number(last.close) >= Number(rows[n - 2] ? rows[n - 2].close : last.open)), textAnchor: 'end' }, fmt(last.close))
         ]),
         el('div', { key: 'lb', className: 'xq-chart-labels' }, [
           el('span', { key: 'd' }, fmtDay(rows[0].timestamp) + ' ~ ' + fmtDay(last.timestamp)),
@@ -258,9 +317,10 @@ return {
       ])
     }
 
-    // ---------- 分时图 ----------
+    // ---------- 分时图（含十字光标/悬浮详情） ----------
     function MinuteChart(props) {
       const items = props.items || []
+      const [hi, setHi] = React.useState(null)
       const lastClose = Number(props.lastClose)
       if (!items.length) return el('div', { className: 'xq-muted' }, '暂无分时数据')
       const W = 640, H = 170, PAD = 6
@@ -286,16 +346,52 @@ return {
       const up = lastClose ? (last >= lastClose) : true
       const stroke = upColor(up)
       const yBase = lastClose ? yOf(lastClose) : null
+      function onMove(e) {
+        if (items.length < 2) return
+        const rect = e.currentTarget.getBoundingClientRect()
+        if (!rect || !rect.width) return
+        const px = (e.clientX - rect.left) / rect.width * W
+        let i = Math.round((px - PAD) / (W - PAD * 2) * (items.length - 1))
+        if (i < 0) i = 0
+        if (i > items.length - 1) i = items.length - 1
+        setHi(i)
+      }
+      let cross = null, tip = null
+      if (hi !== null && hi >= 0 && hi < items.length) {
+        const it = items[hi]
+        const cx = xOf(hi), cy = yOf(Number(it.current))
+        const pct = lastClose ? (Number(it.current) - lastClose) / lastClose * 100 : null
+        cross = [
+          el('line', { key: 'cv', x1: cx, y1: PAD, x2: cx, y2: H - PAD, stroke: 'var(--dsw-alias-label-secondary)', strokeWidth: 0.6, strokeDasharray: '3 3', opacity: 0.7 }),
+          el('line', { key: 'ch', x1: PAD, y1: cy, x2: W - PAD, y2: cy, stroke: 'var(--dsw-alias-label-secondary)', strokeWidth: 0.6, strokeDasharray: '3 3', opacity: 0.7 })
+        ]
+        tip = el('div', {
+          key: 'tip', className: 'xq-tip',
+          style: { left: (cx / W * 100) + '%', transform: cx > W * 0.55 ? 'translateX(calc(-100% - 10px))' : 'translateX(10px)' }
+        }, [
+          el('div', { key: 'd', className: 'xq-tip-d' }, fmtDay(it.timestamp) + ' ' + fmtTime(it.timestamp)),
+          el('div', { key: 'r1', className: 'xq-tip-r' }, [
+            el('span', { key: 'p', className: colorOf(pct) }, [el('span', { key: 'k', className: 'xq-tip-k' }, '价 '), fmt(it.current)]),
+            el('span', { key: 'a' }, [el('span', { key: 'k', className: 'xq-tip-k' }, '均价 '), fmt(it.avg_price)]),
+            el('span', { key: 'g', className: colorOf(pct) }, [el('span', { key: 'k', className: 'xq-tip-k' }, '涨跌 '), fmtPct(pct)])
+          ])
+        ])
+      }
       const kids = [
         yBase !== null ? el('line', { key: 'base', x1: PAD, y1: yBase, x2: W - PAD, y2: yBase, stroke: 'var(--dsw-alias-border-l2)', strokeWidth: 1, strokeDasharray: '3 3' }) : null,
         el('polyline', { key: 'avg', points: avgPts.join(' '), fill: 'none', stroke: 'var(--dsw-alias-state-warn-primary)', strokeWidth: 1 }),
         el('polyline', { key: 'p', points: pricePts.join(' '), fill: 'none', stroke: stroke, strokeWidth: 1.6 }),
-        el('text', { key: 'hi', x: PAD, y: 10, fontSize: 9, fill: 'var(--dsw-alias-label-secondary)' }, '高 ' + fmt(max)),
-        el('text', { key: 'lo', x: PAD, y: H - 4, fontSize: 9, fill: 'var(--dsw-alias-label-secondary)' }, '低 ' + fmt(min)),
-        el('text', { key: 'last', x: W - PAD, y: Math.max(yOf(last) - 4, 10), fontSize: 9, fill: stroke, textAnchor: 'end' }, fmt(last))
+        cross,
+        el('text', { key: 'hiT', x: PAD, y: 10, fontSize: 9, fill: 'var(--dsw-alias-label-secondary)' }, '高 ' + fmt(max)),
+        el('text', { key: 'loT', x: PAD, y: H - 4, fontSize: 9, fill: 'var(--dsw-alias-label-secondary)' }, '低 ' + fmt(min)),
+        el('text', { key: 'lastT', x: W - PAD, y: Math.max(yOf(last) - 4, 10), fontSize: 9, fill: stroke, textAnchor: 'end' }, fmt(last))
       ]
-      return el('div', null, [
-        el('svg', { key: 's', className: 'xq-chart', viewBox: '0 0 ' + W + ' ' + H }, kids),
+      return el('div', { className: 'xq-chart-wrap' }, [
+        tip,
+        el('svg', {
+          key: 's', className: 'xq-chart', viewBox: '0 0 ' + W + ' ' + H,
+          onMouseMove: onMove, onMouseLeave: function () { setHi(null) }
+        }, kids),
         el('div', { key: 'lb', className: 'xq-chart-labels' }, [
           el('span', { key: 'd' }, fmtDay(items[0].timestamp) + ' 分时'),
           el('span', { key: 'n' }, items.length + ' 笔')

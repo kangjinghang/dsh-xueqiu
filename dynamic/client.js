@@ -502,22 +502,26 @@ return {
         let alive = true
         setDetail(null)
         function fb(p) { return p.catch(function () { return null }) }
-        Promise.all([
-          fb(call('quoteDetail', { symbol: view })),
-          fb(call('kline', { symbol: view, period: klinePeriod, count: 120 })),
-          fb(call('minute', { symbol: view })),
-          fb(call('finance', { symbol: view })),
-          fb(call('kol', { symbol: view, count: 6 }))
-        ]).then(function (res) {
+        // 渐进渲染：报价+K线先上屏，分时/财务/KOL 到达后补充，避免等齐才显示
+        const pQuote = fb(call('quoteDetail', { symbol: view }))
+        const pKline = fb(call('kline', { symbol: view, period: klinePeriod, count: 120 }))
+        const pMinute = fb(call('minute', { symbol: view }))
+        const pFinance = fb(call('finance', { symbol: view }))
+        const pKol = fb(call('kol', { symbol: view, count: 6 }))
+        Promise.all([pQuote, pKline]).then(function (res) {
           if (!alive) return
           setDetail({
             quote: (res[0] && res[0].quote) || {},
             kline: res[1] || { rows: [] },
-            minute: res[2] || { items: [], last_close: null },
-            finance: res[3] || { list: [] },
-            kol: (res[4] && res[4].list) || []
+            minute: { items: [], last_close: null },
+            finance: { list: [] },
+            kol: []
           })
           if (!res[0]) setErr('详情加载失败，数据可能不完整')
+          // 其余部分到达后增量合并
+          pMinute.then(function (m) { if (alive && m) setDetail(function (d) { return d ? Object.assign({}, d, { minute: m }) : d }) })
+          pFinance.then(function (f) { if (alive && f) setDetail(function (d) { return d ? Object.assign({}, d, { finance: f }) : d }) })
+          pKol.then(function (k) { if (alive && k) setDetail(function (d) { return d ? Object.assign({}, d, { kol: k.list || [] }) : d }) })
         }).catch(function (e) {
           if (alive) setErr(String((e && e.message) || e))
         })

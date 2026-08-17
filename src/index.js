@@ -10,22 +10,44 @@ export default {
     let watchlist = null
     let uiState = null
 
-    // ---- 请求调度：串行队列 + 最小间隔闸门（雪球安全区：间隔 ≥2s 邻域，并发 1）----
-    const MIN_GAP_MS = 800
-    let queueTail = Promise.resolve()
+    // ---- 请求调度：并发 2 + 最小间隔 100ms（对齐雪球网页端行为，留有安全余量）----
+    const MIN_GAP_MS = 100
+    const MAX_CONCURRENCY = 2
+    let running = 0
     let lastStart = 0
+    const waiters = []
 
     function delay(ms) { return new Promise(function (r) { ctx.timeout(r, ms) }) }
 
+    function release() {
+      running--
+      pump()
+    }
+
+    function pump() {
+      while (running < MAX_CONCURRENCY && waiters.length) {
+        const next = waiters.shift()
+        running++
+        next()
+      }
+    }
+
     function gate(fn) {
-      const run = queueTail.then(async function () {
-        const wait = lastStart + MIN_GAP_MS - Date.now()
-        if (wait > 0) await delay(wait)
-        lastStart = Date.now()
-        return fn()
+      return new Promise(function (resolve, reject) {
+        waiters.push(async function () {
+          const wait = lastStart + MIN_GAP_MS - Date.now()
+          if (wait > 0) await delay(wait)
+          lastStart = Date.now()
+          try {
+            resolve(await fn())
+          } catch (e) {
+            reject(e)
+          } finally {
+            release()
+          }
+        })
+        pump()
       })
-      queueTail = run.then(function () { }, function () { })
-      return run
     }
 
     // ---- TTL 缓存 + in-flight 去重：同一 URL 在途请求共享同一个 Promise ----

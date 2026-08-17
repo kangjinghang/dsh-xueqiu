@@ -402,7 +402,7 @@ return {
     // ---------- 共享 UI 状态（悬浮/嵌入/位置/尺寸/标签页） ----------
     const ui = {
       mode: 'floating', pos: null, size: { w: 720, h: 640 }, dockW: 720,
-      snap: null, snapEdge: null, snapW: 380,
+      snap: null, snapEdge: null, snapW: 380, max: false,
       minimized: false, tab: 'market', closed: false, hydrated: false,
       _fns: [],
       subscribe: function (fn) {
@@ -542,6 +542,20 @@ return {
         })
         return function () { alive = false }
       }, [view, klinePeriod])
+
+      // Esc 逐级返回：先关详情，再通知外壳收起（输入框内不触发）
+      React.useEffect(function () {
+        if (typeof window === 'undefined' || !window.addEventListener) return function () {}
+        function onKey(e) {
+          if (e.key !== 'Escape') return
+          const t = e.target
+          if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+          if (view) setView(null)
+          else bus.emit('esc')
+        }
+        window.addEventListener('keydown', onKey)
+        return function () { window.removeEventListener('keydown', onKey) }
+      }, [view])
 
       function openDetail(symbol) {
         setChartMode('kline')
@@ -872,6 +886,7 @@ return {
         })
         const offBus = bus.on(function (ev) {
           if (ev === 'open') { ui.set({ closed: false, minimized: false, mode: 'floating' }) }
+          else if (ev === 'esc') { if (!ui.minimized && !ui.closed) ui.set({ minimized: true }) }
         })
         return function () { alive = false; offUi(); offBus() }
       }, [])
@@ -879,11 +894,15 @@ return {
       if (ui.mode !== 'floating' || ui.closed || !ui.hydrated) return null
       const s = ui.size
 
-      // 拖拽（贴靠状态下按下标题栏 → 解除贴靠回到自由）
+      // 拖拽（贴靠/最大化状态下按下标题栏 → 解除并回到自由）
       function onTitleDown(e) {
         if (e.pointerType === 'mouse' && e.button !== 0) return
         dragStart = { x: e.clientX, y: e.clientY }
-        if (ui.snapEdge) {
+        if (ui.max) {
+          // 最大化被拖动 → 还原到光标下方，本次松手不磁吸
+          ui.set({ max: false, snapEdge: null, snap: null, pos: { x: e.clientX - 30, y: e.clientY - 16 } })
+          suppressSnap = true
+        } else if (ui.snapEdge) {
           // 解除贴靠：面板从按下位置转为自由，本次松手不再磁吸
           ui.set({ snapEdge: null, snap: null, pos: { x: e.clientX - 30, y: e.clientY - 16 } })
           suppressSnap = true
@@ -950,12 +969,21 @@ return {
         if (vp) { ui.set({ snap: 'br', pos: { x: Math.max(0, vp.w - s.w - 8), y: Math.max(0, vp.h - s.h - 8) } }) }
         else { ui.set({ snap: 'br', pos: null }) }
       }
-      // 缩放（右下角手柄；贴靠时只调宽度）
+      // 最大化 / 还原（双击标题栏或点按钮）
+      function toggleMax() {
+        ui.set({ max: !ui.max })
+      }
+      // 缩放（右下角手柄；贴靠时只调宽度；最大化时从视口有效尺寸起算）
       function onRsDown(e) {
         if (e.pointerType === 'mouse' && e.button !== 0) return
+        let baseW = s.w, baseH = s.h
+        if (ui.max) {
+          const vp = viewport()
+          if (vp) { baseW = vp.w - 16; baseH = vp.h - 16 }
+        }
         resizeRef = ui.snapEdge
           ? { w: ui.snapW, h: 0, x: e.clientX, y: e.clientY }
-          : { w: s.w, h: s.h, x: e.clientX, y: e.clientY }
+          : { w: baseW, h: baseH, x: e.clientX, y: e.clientY }
         try { e.currentTarget.setPointerCapture(e.pointerId) } catch (err) { /* ignore */ }
       }
       function onRsMove(e) {
@@ -966,7 +994,7 @@ return {
         } else {
           const w = Math.min(Math.max(460, resizeRef.w + (e.clientX - resizeRef.x)), 1100)
           const h = Math.min(Math.max(380, resizeRef.h + (e.clientY - resizeRef.y)), 1000)
-          ui.set({ size: { w: w, h: h }, snap: null })
+          ui.set({ size: { w: w, h: h }, snap: null, max: false })
         }
       }
       function onRsUp(e) {
@@ -1008,12 +1036,16 @@ return {
       }
 
       const snapped = ui.snapEdge ? ' xq-snapped xq-narrow' : (ui.snap ? ' xq-snapped' : '')
-      const titleBar = el('div', { className: 'xq-title', ...dragProps }, [
+      const titleBar = el('div', {
+        className: 'xq-title', ...dragProps,
+        onDoubleClick: function (e) { e.stopPropagation(); toggleMax() }
+      }, [
         el('span', { key: 'logo', className: 'xq-logo' }, [el('b', { key: 'b' }, '雪球'), ' mini']),
         el('span', { key: 'st', className: 'xq-status' + (fOpen ? ' xq-live' : '') }, fOpen ? '● 盘中' : '已收盘'),
-        el('span', { key: 'upd', className: 'xq-update' }, ui.snapEdge === 'right' ? '已贴右 · 拖走解除' : ui.snapEdge === 'left' ? '已贴左 · 拖走解除' : '拖到左/右边缘贴靠'),
+        el('span', { key: 'upd', className: 'xq-update' }, ui.max ? '已最大化 · 拖动标题栏还原' : ui.snapEdge === 'right' ? '已贴右 · 拖走解除' : ui.snapEdge === 'left' ? '已贴左 · 拖走解除' : '拖到左/右边缘贴靠 · 双击最大化'),
         el('span', { key: 'sp', className: 'xq-spacer' }),
         el('button', { key: 'snap', className: 'xq-btn-mini', title: '循环：右下角 → 右侧窄栏 → 解除', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); toggleSnap() } }, ui.snapEdge === 'right' ? '◫' : ui.snap === 'br' ? '📌' : '📍'),
+        el('button', { key: 'max', className: 'xq-btn-mini', title: ui.max ? '还原（双击标题栏同效）' : '最大化（双击标题栏同效）', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); toggleMax() } }, ui.max ? '⤡' : '⤢'),
         el('button', { key: 'dock', className: 'xq-btn-mini', title: '嵌入到输入框上方（不遮挡对话）', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); ui.set({ mode: 'docked', minimized: false }) } }, '嵌入'),
         el('button', { key: 'min', className: 'xq-btn-mini', title: '收起', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); ui.set({ minimized: true }) } }, '—'),
         el('button', { key: 'cls', className: 'xq-btn-mini', title: '关闭（点底部指数条重新打开）', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); ui.set({ closed: true }) } }, '✕')
@@ -1032,6 +1064,7 @@ return {
     }
 
     function posStyle() {
+      if (ui.max) return { left: 8, top: 8, right: 8, bottom: 8, width: 'auto', height: 'auto' }
       if (ui.snapEdge === 'right') return { right: 0, top: 0, bottom: 0, left: 'auto', width: ui.snapW }
       if (ui.snapEdge === 'left') return { left: 0, top: 0, bottom: 0, right: 'auto', width: ui.snapW }
       if (ui.pos) return { left: ui.pos.x, top: ui.pos.y, right: 'auto', bottom: 'auto', width: ui.size.w, height: ui.size.h }
@@ -1043,7 +1076,10 @@ return {
       const [, force] = React.useState(0)
       React.useEffect(function () {
         const off = ui.subscribe(function () { force(function (x) { return x + 1 }) })
-        return off
+        const offBus = bus.on(function (ev) {
+          if (ev === 'esc') { if (!ui.minimized) ui.set({ minimized: true }) }
+        })
+        return function () { off(); offBus() }
       }, [])
       if (ui.mode !== 'docked' || !ui.hydrated) return null
 
@@ -1083,11 +1119,6 @@ return {
         ]),
         el('div', { key: 'rs', className: 'xq-resize xq-resize-w', onPointerDown: onDwDown, onPointerMove: onDwMove, onPointerUp: onDwUp, onPointerCancel: onDwUp })
       ])
-    }
-
-    function posStyle() {
-      if (ui.pos) return { left: ui.pos.x, top: ui.pos.y, right: 'auto', bottom: 'auto', width: ui.size.w, height: ui.size.h }
-      return { width: ui.size.w, height: ui.size.h }
     }
 
     // ---------- 输入框上方入口条（仅悬浮模式下显示） ----------

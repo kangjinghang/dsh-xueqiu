@@ -28,7 +28,11 @@ return {
       '.xq-tab:hover{color:var(--dsw-alias-label-primary);}\n' +
       '.xq-tab-active{color:var(--dsw-alias-brand-primary);border-bottom-color:var(--dsw-alias-brand-primary);font-weight:600;}\n' +
       '.xq-idx{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;}\n' +
-      '.xq-idx-card{flex:1;min-width:120px;background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);border-radius:8px;padding:6px 8px;}\n' +
+      '.xq-idx-card{flex:1;min-width:120px;background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);border-radius:8px;padding:6px 8px;cursor:pointer;}\n' +
+      '.xq-idx-card:hover{border-color:var(--dsw-alias-brand-primary);}\n' +
+      '.xq-sort-h{cursor:pointer;user-select:none;}\n' +
+      '.xq-sort-h:hover{color:var(--dsw-alias-label-primary);}\n' +
+      '.xq-sort-on{color:var(--dsw-alias-label-primary);font-weight:600;}\n' +
       '.xq-idx-name{font-size:11px;color:var(--dsw-alias-label-secondary);}\n' +
       '.xq-idx-row{display:flex;align-items:baseline;gap:6px;}\n' +
       '.xq-idx-cur{font-size:14px;font-weight:700;}\n' +
@@ -468,6 +472,8 @@ return {
       const [updatedAt, setUpdatedAt] = React.useState(null)
       const [err, setErr] = React.useState('')
       const [loading, setLoading] = React.useState(true)
+      const [sortK, setSortK] = React.useState('default')
+      const [sortAsc, setSortAsc] = React.useState(false)
       const tab = ui.tab
       function setTab(t) { ui.set({ tab: t }) }
 
@@ -523,20 +529,28 @@ return {
         return function () { if (stopA) stopA(); if (stopB) stopB() }
       }, [marketOpen])
 
-      // 个股详情
+      // 个股详情（指数等无财务/热议数据的标的逐项容错，不整单失败）
       React.useEffect(function () {
         if (!view) { setDetail(null); return }
         let alive = true
         setDetail(null)
+        function fb(p) { return p.catch(function () { return null }) }
         Promise.all([
-          call('quoteDetail', { symbol: view }),
-          call('kline', { symbol: view, period: klinePeriod, count: 120 }),
-          call('minute', { symbol: view }),
-          call('finance', { symbol: view }),
-          call('kol', { symbol: view, count: 6 })
+          fb(call('quoteDetail', { symbol: view })),
+          fb(call('kline', { symbol: view, period: klinePeriod, count: 120 })),
+          fb(call('minute', { symbol: view })),
+          fb(call('finance', { symbol: view })),
+          fb(call('kol', { symbol: view, count: 6 }))
         ]).then(function (res) {
           if (!alive) return
-          setDetail({ quote: res[0].quote, kline: res[1], minute: res[2], finance: res[3], kol: (res[4] && res[4].list) || [] })
+          setDetail({
+            quote: (res[0] && res[0].quote) || {},
+            kline: res[1] || { rows: [] },
+            minute: res[2] || { items: [], last_close: null },
+            finance: res[3] || { list: [] },
+            kol: (res[4] && res[4].list) || []
+          })
+          if (!res[0]) setErr('详情加载失败，数据可能不完整')
         }).catch(function (e) {
           if (alive) setErr(String((e && e.message) || e))
         })
@@ -621,8 +635,25 @@ return {
 
       // 行情 tab
       function MarketTab() {
+        const sorted = quotes.slice()
+        if (sortK !== 'default') {
+          sorted.sort(function (a, b) {
+            const av = Number(a[sortK]), bv = Number(b[sortK])
+            const an = isFinite(av) ? av : -Infinity
+            const bn = isFinite(bv) ? bv : -Infinity
+            return sortAsc ? an - bn : bn - an
+          })
+        }
+        function sortBy(k) {
+          if (sortK === k) setSortAsc(!sortAsc)
+          else { setSortK(k); setSortAsc(false) }
+        }
+        function arrow(k) { return sortK === k ? (sortAsc ? ' ▲' : ' ▼') : '' }
         const idxKids = indices.map(function (q) {
-          return el('div', { key: q.symbol, className: 'xq-idx-card' }, [
+          return el('div', {
+            key: q.symbol, className: 'xq-idx-card', title: '查看 ' + (q.name || q.symbol) + ' 详情',
+            onClick: function () { openDetail(q.symbol) }
+          }, [
             el('div', { key: 'n', className: 'xq-idx-name' }, q.name),
             el('div', { key: 'r', className: 'xq-idx-row' }, [
               el('span', { key: 'c', className: 'xq-idx-cur ' + colorOf(q.percent) }, fmt(q.current)),
@@ -630,8 +661,8 @@ return {
             ])
           ])
         })
-        const rows = quotes.map(function (q) {
-          return el('div', { key: q.symbol, className: 'xq-grid-row' }, [
+        const rows = sorted.map(function (q) {
+          return el('div', { key: q.symbol, className: 'xq-grid-row', onClick: function () { openDetail(q.symbol) } }, [
             el('div', { key: 'n' }, [
               el('div', { key: 'a', className: 'xq-name' }, q.name),
               el('div', { key: 'b', className: 'xq-sub' }, q.symbol)
@@ -640,17 +671,21 @@ return {
             el('div', { key: 'p', className: colorOf(q.percent) }, fmtPct(q.percent)),
             el('div', { key: 'v', className: 'xq-sub xq-vol-col' }, fmtVol(q.volume)),
             el('div', { key: 'a2', className: 'xq-actions' }, [
-              el('button', { key: 'd', className: 'xq-btn-mini', onClick: function () { openDetail(q.symbol) } }, '详情'),
-              el('button', { key: 'r', className: 'xq-btn-mini', onClick: function () { removeWatch(q.symbol) } }, '×')
+              el('button', { key: 'd', className: 'xq-btn-mini', onClick: function (e) { e.stopPropagation(); openDetail(q.symbol) } }, '详情'),
+              el('button', { key: 'r', className: 'xq-btn-mini', title: '移除自选', onClick: function (e) { e.stopPropagation(); removeWatch(q.symbol) } }, '×')
             ])
           ])
         })
         return el('div', null, [
           el('div', { key: 'idx', className: 'xq-idx' }, idxKids),
           el('div', { key: 'wl', className: 'xq-grid' }, [
-            el('div', { key: 'h', className: 'xq-grid-hd' }, ['名称', '现价', '涨跌幅', '成交量', '操作'].map(function (t, i) {
-              return el('span', { key: i }, t)
-            })),
+            el('div', { key: 'h', className: 'xq-grid-hd' }, [
+              el('span', { key: 'c0' }, '名称'),
+              el('span', { key: 'c1', className: 'xq-sort-h' + (sortK === 'current' ? ' xq-sort-on' : ''), onClick: function () { sortBy('current') } }, '现价' + arrow('current')),
+              el('span', { key: 'c2', className: 'xq-sort-h' + (sortK === 'percent' ? ' xq-sort-on' : ''), onClick: function () { sortBy('percent') } }, '涨跌幅' + arrow('percent')),
+              el('span', { key: 'c3' }, '成交量'),
+              el('span', { key: 'c4' }, '操作')
+            ]),
             rows.length ? rows : el('div', { key: 'empty', className: 'xq-grid-row' }, el('span', { key: 'e', className: 'xq-muted' }, '自选股为空，去「搜索」或下方添加'))
           ]),
           el('div', { key: 'add', className: 'xq-search-row' }, [
@@ -759,7 +794,7 @@ return {
             }, m[1])
           })),
           el('div', { key: 'list', className: 'xq-grid' }, hot.map(function (it, i) {
-            return el('div', { key: it.symbol, className: 'xq-hot-row' }, [
+            return el('div', { key: it.symbol, className: 'xq-hot-row', onClick: function () { openDetail(it.symbol) } }, [
               el('span', { key: 'r', className: 'xq-rank' }, String(i + 1)),
               el('div', { key: 'n' }, [
                 el('div', { key: 'a', className: 'xq-name' }, it.name),
@@ -768,7 +803,7 @@ return {
               el('span', { key: 'sp', className: 'xq-spacer' }),
               el('span', { key: 'c', className: colorOf(it.percent) }, fmt(it.current)),
               el('span', { key: 'p', className: colorOf(it.percent) }, fmtPct(it.percent)),
-              el('button', { key: 'd', className: 'xq-btn-mini', onClick: function () { openDetail(it.symbol) } }, '详情')
+              el('button', { key: 'd', className: 'xq-btn-mini', onClick: function (e) { e.stopPropagation(); openDetail(it.symbol) } }, '详情')
             ])
           }))
         ])

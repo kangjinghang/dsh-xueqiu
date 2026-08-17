@@ -843,9 +843,10 @@ return {
     }
 
     // ---------- 嵌入式主面板（conversation.input.dock）：输入框上方一整行 ----------
-    function DockPanel() {
+    // DockGate 常驻挂载：负责 hydrate + 订阅 ui，open=false 时渲染 null。
+    // 不能把开关写在槽位 render 闭包里——槽位函数不会因 ui 变化而重新执行。
+    function DockGate() {
       const [, force] = React.useState(0)
-      const [open, setOpen] = React.useState(true)
       React.useEffect(function () {
         let alive = true
         call('ui.get', {}).then(function (d) {
@@ -857,13 +858,18 @@ return {
           }
           ui.set({ hydrated: true })
         }).catch(function () { ui.set({ hydrated: true }) })
-        const off = ui.subscribe(function () {
-          force(function (x) { return x + 1 })
-          if (ui.hydrated) saveUi()
-        })
+        const off = ui.subscribe(function () { force(function (x) { return x + 1 }) })
         return function () { alive = false; off() }
       }, [])
-      if (!ui.hydrated) return null
+      if (!ui.hydrated || !ui.open) return null
+      return el(DockPanel, null)
+    }
+
+    function DockPanel() {
+      React.useEffect(function () {
+        const off = ui.subscribe(function () { if (ui.hydrated) saveUi() })
+        return off
+      }, [])
       return el('div', { className: 'xq-dock' }, [
         el('div', { key: 'head', className: 'xq-dock-head' }, [
           el('span', { key: 'logo', className: 'xq-logo' }, [el('b', { key: 'b' }, '雪球'), ' mini']),
@@ -981,7 +987,7 @@ return {
     slots.inject('conversation.input.dock', function () {
       return slots.register(
         { name: 'conversation.input.dock', id: 'xueqiu-panel', order: 30 },
-        function () { return ui.open ? el(DockPanel, null) : null }
+        function () { return el(DockGate, null) }
       )
     })
     slots.inject('shell.overlay', function () {

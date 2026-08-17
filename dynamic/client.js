@@ -72,7 +72,7 @@ return {
       '.xq-stat-v{font-size:12.5px;font-weight:600;}\n' +
       '.xq-card{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);border-radius:8px;padding:8px 10px;margin-bottom:8px;}\n' +
       '.xq-card-t{font-size:12px;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:8px;}\n' +
-      '.xq-periods{display:inline-flex;gap:2px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:1px;}\n' +
+      '.xq-periods{display:inline-flex;flex-wrap:wrap;gap:2px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:1px;}\n' +
       '.xq-periods button,.xq-modes button{font-size:11.5px;border:none;background:none;color:var(--dsw-alias-label-secondary);padding:2px 9px;border-radius:5px;cursor:pointer;}\n' +
       '.xq-periods button.xq-on,.xq-modes button.xq-on{background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);font-weight:600;}\n' +
       '.xq-chart{width:100%;height:auto;display:block;}\n' +
@@ -751,12 +751,16 @@ return {
                 el('button', { key: 'm', className: chartMode === 'minute' ? 'xq-on' : '', onClick: function () { setChartMode('minute') } }, '分时')
               ]),
               el('span', { key: 'sp', className: 'xq-spacer' }),
-              chartMode === 'kline' ? el('span', { key: 'pd', className: 'xq-periods' }, ['day', 'week', 'month', '60m'].map(function (p) {
-                return el('button', {
-                  key: p, className: klinePeriod === p ? 'xq-on' : '',
-                  onClick: function () { setKlinePeriod(p) }
-                }, p === 'day' ? '日K' : p === 'week' ? '周K' : p === 'month' ? '月K' : '60分')
-              })) : null
+              chartMode === 'kline' ? el('span', { key: 'pd', className: 'xq-periods' }, (function () {
+                const ps = ['5m', '15m', '30m', '60m', 'day', 'week', 'month']
+                const lb = { '5m': '5分', '15m': '15分', '30m': '30分', '60m': '60分', day: '日K', week: '周K', month: '月K' }
+                return ps.map(function (p) {
+                  return el('button', {
+                    key: p, className: klinePeriod === p ? 'xq-on' : '',
+                    onClick: function () { setKlinePeriod(p) }
+                  }, lb[p] || p)
+                })
+              })()) : null
             ]),
             chartMode === 'kline'
               ? el(KlineChart, { key: 'c', rows: kl.rows })

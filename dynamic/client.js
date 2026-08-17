@@ -2,16 +2,15 @@ return {
   inject: ['timer'],
   apply(ctx) {
     styles.insert('\n' +
-      '.xq-float{position:fixed;right:16px;bottom:16px;width:720px;max-width:92vw;max-height:82vh;display:flex;flex-direction:column;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.28);z-index:1200;pointer-events:auto;overflow:hidden;font-size:13px;line-height:1.45;color:var(--dsw-alias-label-primary);}\n' +
-      '.xq-float *{box-sizing:border-box;}\n' +
-      '.xq-title{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--dsw-alias-border-l1);cursor:grab;user-select:none;flex-shrink:0;}\n' +
-      '.xq-title:active{cursor:grabbing;}\n' +
-      '.xq-min{cursor:pointer;width:auto;max-width:520px;flex-direction:row;align-items:center;gap:10px;padding:7px 12px;}\n' +
-      '.xq-body{overflow-y:auto;flex:1;padding:0 12px 10px;}\n' +
-      '.xq-entry{display:flex;align-items:center;gap:10px;cursor:pointer;width:100%;max-width:760px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-radius:10px;padding:7px 12px;}\n' +
-      '.xq-entry:hover{border-color:var(--dsw-alias-brand-primary);}\n' +
-      '.xq-entry *{box-sizing:border-box;}\n' +
-      '.xq-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;}\n' +
+      '.xq-dock{background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-radius:10px;overflow:hidden;font-size:13px;line-height:1.45;color:var(--dsw-alias-label-primary);margin-bottom:6px;}\n' +
+      '.xq-dock *{box-sizing:border-box;}\n' +
+      '.xq-dock-head{display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid var(--dsw-alias-border-l1);}\n' +
+      '.xq-dock-body{max-height:56vh;overflow-y:auto;padding:8px 12px 10px;}\n' +
+      '.xq-badge{position:fixed;right:16px;bottom:64px;display:flex;align-items:center;gap:8px;padding:5px 12px;border-radius:999px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);box-shadow:0 6px 24px rgba(0,0,0,.25);font-size:11.5px;line-height:1.4;color:var(--dsw-alias-label-primary);cursor:grab;user-select:none;pointer-events:auto;z-index:1200;}\n' +
+      '.xq-badge:active{cursor:grabbing;}\n' +
+      '.xq-badge b{color:var(--dsw-alias-brand-primary);}\n' +
+      '.xq-badge-val{font-weight:700;}\n' +
+      '.xq-badge-hint{color:var(--dsw-alias-label-secondary);}\n' +
       '.xq-logo{font-weight:700;font-size:14px;letter-spacing:.5px;white-space:nowrap;}\n' +
       '.xq-logo b{color:var(--dsw-alias-brand-primary);}\n' +
       '.xq-update{font-size:11px;color:var(--dsw-alias-label-secondary);white-space:nowrap;}\n' +
@@ -71,7 +70,7 @@ return {
       '.xq-stat-k{font-size:10.5px;color:var(--dsw-alias-label-secondary);}\n' +
       '.xq-stat-v{font-size:12.5px;font-weight:600;}\n' +
       '.xq-card{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);border-radius:8px;padding:8px 10px;margin-bottom:8px;}\n' +
-      '.xq-card-t{font-size:12px;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:8px;}\n' +
+      '.xq-card-t{font-size:12px;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}\n' +
       '.xq-periods{display:inline-flex;flex-wrap:wrap;gap:2px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:1px;}\n' +
       '.xq-periods button,.xq-modes button{font-size:11.5px;border:none;background:none;color:var(--dsw-alias-label-secondary);padding:2px 9px;border-radius:5px;cursor:pointer;}\n' +
       '.xq-periods button.xq-on,.xq-modes button.xq-on{background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);font-weight:600;}\n' +
@@ -96,7 +95,6 @@ return {
       '.xq-tick{display:inline-flex;gap:5px;align-items:baseline;}\n' +
       '.xq-tick-name{color:var(--dsw-alias-label-secondary);}\n' +
       '.xq-tick-cur{font-weight:600;}\n' +
-      '.xq-sum{font-size:11.5px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}\n' +
       '.xq-caret{font-size:11px;color:var(--dsw-alias-label-secondary);flex-shrink:0;}\n' +
       '.xq-loading{font-size:12px;color:var(--dsw-alias-label-secondary);padding:12px 0;text-align:center;}\n'
     )
@@ -165,28 +163,46 @@ return {
     }
     function upColor(up) { return up ? 'var(--dsw-alias-state-error-primary)' : 'var(--dsw-alias-state-success-primary)' }
 
-    // 组件间事件总线（Panel / Entry / Ticker 共享）
-    const bus = {
-      fns: [],
-      on: function (fn) {
-        this.fns.push(fn)
+    function viewport() {
+      try { if (typeof window !== 'undefined' && window.innerWidth) return { w: window.innerWidth, h: window.innerHeight } } catch (e) { /* ignore */ }
+      try { if (typeof document !== 'undefined' && document.documentElement && document.documentElement.clientWidth) return { w: document.documentElement.clientWidth, h: document.documentElement.clientHeight } } catch (e) { /* ignore */ }
+      return null
+    }
+
+    // ---------- 共享 UI 状态：面板开合 / 当前标签 / 徽章位置 ----------
+    const ui = {
+      open: false, tab: 'market', badgePos: null, hydrated: false,
+      _fns: [],
+      subscribe: function (fn) {
+        this._fns.push(fn)
         const self = this
         return function () {
-          const i = self.fns.indexOf(fn)
-          if (i !== -1) self.fns.splice(i, 1)
+          const i = self._fns.indexOf(fn)
+          if (i !== -1) self._fns.splice(i, 1)
         }
       },
-      emit: function (ev) {
-        const fns = this.fns.slice()
-        for (let i = 0; i < fns.length; i++) {
-          try { fns[i](ev) } catch (e) { /* ignore */ }
+      notify: function () {
+        const fns = this._fns.slice()
+        for (let i = 0; i < fns.length; i++) { try { fns[i]() } catch (e) { /* ignore */ } }
+      },
+      set: function (patch) {
+        let ch = false
+        for (const k in patch) {
+          if (this[k] !== patch[k]) { this[k] = patch[k]; ch = true }
         }
+        if (ch) this.notify()
       }
     }
 
-    // （saveUi / dragRef / ui 共享状态见下方新块）
+    const saveUi = ctx.debounce(function () {
+      call('ui.set', { tab: ui.tab, open: ui.open, badgePos: ui.badgePos }).catch(function () { /* 忽略 */ })
+    }, 800)
 
-    // ---------- K线蜡烛图（含成交量与均线 + 十字光标/悬浮详情） ----------
+    // 徽章拖拽引用（实例唯一）
+    let badgeDrag = null
+    let badgeMoved = false
+
+    // ---------- K线蜡烛图（成交量 + 均线 + 十字光标/悬浮详情） ----------
     function KlineChart(props) {
       const rows = props.rows || []
       const [hi, setHi] = React.useState(null)
@@ -261,7 +277,6 @@ return {
         if (i > n - 1) i = n - 1
         setHi(i)
       }
-      // 十字光标 + 悬浮详情
       let cross = null, tip = null
       if (hi !== null && hi >= 0 && hi < n) {
         const r = rows[hi]
@@ -321,7 +336,7 @@ return {
       ])
     }
 
-    // ---------- 分时图（含十字光标/悬浮详情） ----------
+    // ---------- 分时图（十字光标/悬浮详情） ----------
     function MinuteChart(props) {
       const items = props.items || []
       const [hi, setHi] = React.useState(null)
@@ -403,55 +418,7 @@ return {
       ])
     }
 
-    // ---------- 共享 UI 状态（悬浮/嵌入/位置/尺寸/标签页） ----------
-    const ui = {
-      mode: 'floating', pos: null, size: { w: 720, h: 640 }, dockW: 720,
-      snap: null, snapEdge: null, snapW: 380, max: false,
-      minimized: false, tab: 'market', closed: false, hydrated: false,
-      _fns: [],
-      subscribe: function (fn) {
-        this._fns.push(fn)
-        const self = this
-        return function () {
-          const i = self._fns.indexOf(fn)
-          if (i !== -1) self._fns.splice(i, 1)
-        }
-      },
-      notify: function () {
-        const fns = this._fns.slice()
-        for (let i = 0; i < fns.length; i++) { try { fns[i]() } catch (e) { /* ignore */ } }
-      },
-      set: function (patch) {
-        let ch = false
-        for (const k in patch) {
-          if (this[k] !== patch[k]) { this[k] = patch[k]; ch = true }
-        }
-        if (ch) this.notify()
-      }
-    }
-
-    function viewport() {
-      try { if (typeof window !== 'undefined' && window.innerWidth) return { w: window.innerWidth, h: window.innerHeight } } catch (e) { /* ignore */ }
-      try { if (typeof document !== 'undefined' && document.documentElement && document.documentElement.clientWidth) return { w: document.documentElement.clientWidth, h: document.documentElement.clientHeight } } catch (e) { /* ignore */ }
-      return null
-    }
-
-    // 保存 UI 状态（防抖）
-    const saveUi = ctx.debounce(function () {
-      call('ui.set', {
-        mode: ui.mode, pos: ui.pos, size: ui.size, dockW: ui.dockW,
-        snap: ui.snap, snapEdge: ui.snapEdge, snapW: ui.snapW,
-        tab: ui.tab, minimized: ui.minimized
-      }).catch(function () { /* 忽略 */ })
-    }, 800)
-
-    // 拖拽 / 缩放用可变引用（实例唯一）
-    let dragRef = null
-    let resizeRef = null
-    let dragStart = null
-    let suppressSnap = false
-
-    // ---------- 面板内容（数据 + tabs + 详情），由悬浮/嵌入外壳共用 ----------
+    // ---------- 面板内容（数据 + tabs + 详情） ----------
     function XueqiuPanel() {
       const [watchlist, setWatchlist] = React.useState([])
       const [quotes, setQuotes] = React.useState([])
@@ -469,7 +436,6 @@ return {
       const [klinePeriod, setKlinePeriod] = React.useState('day')
       const [chartMode, setChartMode] = React.useState('kline')
       const [marketOpen, setMarketOpen] = React.useState(true)
-      const [updatedAt, setUpdatedAt] = React.useState(null)
       const [err, setErr] = React.useState('')
       const [loading, setLoading] = React.useState(true)
       const [sortK, setSortK] = React.useState('default')
@@ -487,7 +453,6 @@ return {
           setMarketOpen(status === 5 || status === 6)
           setWatchlist(wl)
           setIndices((res[1] && res[1].list) || [])
-          setUpdatedAt(Date.now())
           setErr('')
           if (!wl.length) return
           return call('quote', { symbols: wl }).then(function (data) {
@@ -511,7 +476,6 @@ return {
         })
       }
 
-      // 初始加载
       React.useEffect(function () {
         setLoading(true)
         refreshMarket().then(function () { return refreshContent() })
@@ -520,7 +484,6 @@ return {
         return function () { /* 一次性 */ }
       }, [])
 
-      // 智能刷新：盘中 20s/60s，收盘 60s/180s
       React.useEffect(function () {
         const marketMs = marketOpen ? 20000 : 60000
         const contentMs = marketOpen ? 60000 : 180000
@@ -529,7 +492,6 @@ return {
         return function () { if (stopA) stopA(); if (stopB) stopB() }
       }, [marketOpen])
 
-      // 个股详情（指数等无财务/热议数据的标的逐项容错，不整单失败）
       React.useEffect(function () {
         if (!view) { setDetail(null); return }
         let alive = true
@@ -557,7 +519,7 @@ return {
         return function () { alive = false }
       }, [view, klinePeriod])
 
-      // Esc 逐级返回：先关详情，再通知外壳收起（输入框内不触发）
+      // Esc：先关详情，再收起面板（输入框内不触发）
       React.useEffect(function () {
         if (typeof window === 'undefined' || !window.addEventListener) return function () {}
         function onKey(e) {
@@ -565,7 +527,7 @@ return {
           const t = e.target
           if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
           if (view) setView(null)
-          else bus.emit('esc')
+          else ui.set({ open: false })
         }
         window.addEventListener('keydown', onKey)
         return function () { window.removeEventListener('keydown', onKey) }
@@ -633,7 +595,6 @@ return {
 
       const errBox = err ? el('div', { className: 'xq-err' }, err) : null
 
-      // 行情 tab
       function MarketTab() {
         const sorted = quotes.slice()
         if (sortK !== 'default') {
@@ -669,7 +630,7 @@ return {
             ]),
             el('div', { key: 'c', className: colorOf(q.percent) }, fmt(q.current)),
             el('div', { key: 'p', className: colorOf(q.percent) }, fmtPct(q.percent)),
-            el('div', { key: 'v', className: 'xq-sub xq-vol-col' }, fmtVol(q.volume)),
+            el('div', { key: 'v', className: 'xq-sub' }, fmtVol(q.volume)),
             el('div', { key: 'a2', className: 'xq-actions' }, [
               el('button', { key: 'd', className: 'xq-btn-mini', onClick: function (e) { e.stopPropagation(); openDetail(q.symbol) } }, '详情'),
               el('button', { key: 'r', className: 'xq-btn-mini', title: '移除自选', onClick: function (e) { e.stopPropagation(); removeWatch(q.symbol) } }, '×')
@@ -700,7 +661,6 @@ return {
         ])
       }
 
-      // 个股详情
       function DetailView() {
         if (!detail) return el('div', { className: 'xq-loading' }, '加载中…')
         const q = detail.quote || {}
@@ -782,7 +742,6 @@ return {
         ])
       }
 
-      // 热榜 tab
       function HotTab() {
         const markets = [['cn', 'A股'], ['us', '美股'], ['hk', '港股'], ['global', '全球']]
         return el('div', null, [
@@ -813,7 +772,6 @@ return {
         ])
       }
 
-      // 搜索 tab
       function SearchTab() {
         const isPost = searchMode === 'post'
         const resKids = searchRes.map(function (r) {
@@ -856,7 +814,6 @@ return {
         ])
       }
 
-      // 快讯 tab
       function NewsTab() {
         const kids = news.map(function (it) {
           return el('div', { key: String(it.id), className: 'xq-news-item' + (it.mark === 1 ? ' xq-important' : '') }, [
@@ -885,309 +842,115 @@ return {
       return el('div', null, [tabs, errBox, content])
     }
 
-    // ---------- 悬浮外壳（shell.overlay）：自由拖拽 + 左右边缘贴靠 + 四角磁吸 + 缩放 ----------
-    function FloatingShell() {
+    // ---------- 嵌入式主面板（conversation.input.dock）：输入框上方一整行 ----------
+    function DockPanel() {
       const [, force] = React.useState(0)
-      const [fIdx, setFIdx] = React.useState([])
-      const [fOpen, setFOpen] = React.useState(true)
-      const [dragTarget, setDragTarget] = React.useState(null)
-      React.useEffect(function () {
-        let alive = true
-        function refresh() {
-          call('quote', { symbols: ['SH000001', 'SZ399001', 'SZ399006', 'SH000300'] }).then(function (data) {
-            if (!alive) return
-            setFIdx((data && data.list) || [])
-            const st = data ? data.status : null
-            setFOpen(st === 5 || st === 6)
-          }).catch(function () { /* 静默失败 */ })
-        }
-        refresh()
-        const stop = ctx.interval(refresh, 60000)
-        return function () { alive = false; if (stop) stop() }
-      }, [])
+      const [open, setOpen] = React.useState(true)
       React.useEffect(function () {
         let alive = true
         call('ui.get', {}).then(function (d) {
           if (!alive) return
-          if (d && d.mode) ui.set({ mode: d.mode })
-          if (d && d.pos) ui.set({ pos: { x: Number(d.pos.x), y: Number(d.pos.y) } })
-          if (d && d.size) ui.set({ size: { w: Number(d.size.w), h: Number(d.size.h) } })
-          if (d && d.dockW) ui.set({ dockW: Number(d.dockW) })
-          if (d && d.snap) ui.set({ snap: d.snap })
-          if (d && (d.snapEdge === 'left' || d.snapEdge === 'right')) ui.set({ snapEdge: d.snapEdge })
-          if (d && d.snapW) ui.set({ snapW: Number(d.snapW) })
           if (d && d.tab) ui.set({ tab: d.tab })
-          ui.set({ minimized: !!(d && d.minimized), hydrated: true })
+          if (d && typeof d.open === 'boolean') ui.set({ open: d.open })
+          if (d && d.badgePos && isFinite(Number(d.badgePos.x)) && isFinite(Number(d.badgePos.y))) {
+            ui.set({ badgePos: { x: Number(d.badgePos.x), y: Number(d.badgePos.y) } })
+          }
+          ui.set({ hydrated: true })
         }).catch(function () { ui.set({ hydrated: true }) })
-        const offUi = ui.subscribe(function () {
+        const off = ui.subscribe(function () {
           force(function (x) { return x + 1 })
           if (ui.hydrated) saveUi()
         })
-        const offBus = bus.on(function (ev) {
-          if (ev === 'open') { ui.set({ closed: false, minimized: false, mode: 'floating' }) }
-          else if (ev === 'esc') { if (!ui.minimized && !ui.closed) ui.set({ minimized: true }) }
-        })
-        return function () { alive = false; offUi(); offBus() }
+        return function () { alive = false; off() }
       }, [])
-
-      if (ui.mode !== 'floating' || ui.closed || !ui.hydrated) return null
-      const s = ui.size
-
-      // 拖拽（贴靠/最大化状态下按下标题栏 → 解除并回到自由）
-      function onTitleDown(e) {
-        if (e.pointerType === 'mouse' && e.button !== 0) return
-        dragStart = { x: e.clientX, y: e.clientY }
-        if (ui.max) {
-          // 最大化被拖动 → 还原到光标下方，本次松手不磁吸
-          ui.set({ max: false, snapEdge: null, snap: null, pos: { x: e.clientX - 30, y: e.clientY - 16 } })
-          suppressSnap = true
-        } else if (ui.snapEdge) {
-          // 解除贴靠：面板从按下位置转为自由，本次松手不再磁吸
-          ui.set({ snapEdge: null, snap: null, pos: { x: e.clientX - 30, y: e.clientY - 16 } })
-          suppressSnap = true
-        }
-        const baseX = ui.pos ? ui.pos.x : e.clientX
-        const baseY = ui.pos ? ui.pos.y : e.clientY
-        dragRef = { dx: e.clientX - baseX, dy: e.clientY - baseY }
-        ui.set({ snap: null })
-        setDragTarget(null)
-        try { e.currentTarget.setPointerCapture(e.pointerId) } catch (err) { /* ignore */ }
-      }
-      function onTitleMove(e) {
-        if (!dragRef) return
-        ui.set({ pos: { x: Math.max(4, e.clientX - dragRef.dx), y: Math.max(4, e.clientY - dragRef.dy) } })
-        const vp = viewport()
-        if (vp) {
-          if (e.clientX >= vp.w - 70) setDragTarget('right')
-          else if (e.clientX <= 70) setDragTarget('left')
-          else setDragTarget(null)
-        }
-      }
-      function onTitleUp(e) {
-        const moved = dragStart ? Math.sqrt(Math.pow(e.clientX - dragStart.x, 2) + Math.pow(e.clientY - dragStart.y, 2)) : 0
-        dragRef = null
-        dragStart = null
-        try { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId) } catch (err) { /* ignore */ }
-        if (suppressSnap) { suppressSnap = false; setDragTarget(null); return }
-        if (dragTarget) {
-          ui.set({ snapEdge: dragTarget, pos: null, snap: null, snapW: ui.snapW || 380 })
-          setDragTarget(null)
-          return
-        }
-        setDragTarget(null)
-        if (moved >= 6) snapCheck()
-      }
-      // 四角磁吸：拖放终点靠近任一屏幕角 → 吸附
-      function snapCheck() {
-        const vp = viewport()
-        const p = ui.pos
-        if (!vp || !p) return
-        const corners = [
-          { key: 'tl', x: 8, y: 8 },
-          { key: 'tr', x: vp.w - s.w - 8, y: 8 },
-          { key: 'bl', x: 8, y: vp.h - s.h - 8 },
-          { key: 'br', x: vp.w - s.w - 8, y: vp.h - s.h - 8 }
-        ]
-        let best = null, bestD = 110
-        for (let i = 0; i < corners.length; i++) {
-          const c = corners[i]
-          const d = Math.sqrt(Math.pow(p.x - c.x, 2) + Math.pow(p.y - c.y, 2))
-          if (d < bestD) { bestD = d; best = c }
-        }
-        ui.set({ pos: best ? { x: Math.max(0, best.x), y: Math.max(0, best.y) } : p, snap: best ? best.key : null })
-      }
-      // 📌 循环：右下角 → 右侧窄栏贴靠 → 解除
-      function toggleSnap() {
-        const vp = viewport()
-        if (ui.snapEdge === 'right') { ui.set({ snapEdge: null }); return }
-        if (ui.snap === 'br') {
-          ui.set({ snap: null })
-          if (vp) ui.set({ snapEdge: 'right', pos: null, snapW: ui.snapW || 380 })
-          return
-        }
-        if (vp) { ui.set({ snap: 'br', pos: { x: Math.max(0, vp.w - s.w - 8), y: Math.max(0, vp.h - s.h - 8) } }) }
-        else { ui.set({ snap: 'br', pos: null }) }
-      }
-      // 最大化 / 还原（双击标题栏或点按钮）
-      function toggleMax() {
-        ui.set({ max: !ui.max })
-      }
-      // 缩放（右下角手柄；贴靠时只调宽度；最大化时从视口有效尺寸起算）
-      function onRsDown(e) {
-        if (e.pointerType === 'mouse' && e.button !== 0) return
-        let baseW = s.w, baseH = s.h
-        if (ui.max) {
-          const vp = viewport()
-          if (vp) { baseW = vp.w - 16; baseH = vp.h - 16 }
-        }
-        resizeRef = ui.snapEdge
-          ? { w: ui.snapW, h: 0, x: e.clientX, y: e.clientY }
-          : { w: baseW, h: baseH, x: e.clientX, y: e.clientY }
-        try { e.currentTarget.setPointerCapture(e.pointerId) } catch (err) { /* ignore */ }
-      }
-      function onRsMove(e) {
-        if (!resizeRef) return
-        if (ui.snapEdge) {
-          const w = Math.min(Math.max(300, resizeRef.w + (e.clientX - resizeRef.x)), 560)
-          ui.set({ snapW: w })
-        } else {
-          const w = Math.min(Math.max(460, resizeRef.w + (e.clientX - resizeRef.x)), 1100)
-          const h = Math.min(Math.max(380, resizeRef.h + (e.clientY - resizeRef.y)), 1000)
-          ui.set({ size: { w: w, h: h }, snap: null, max: false })
-        }
-      }
-      function onRsUp(e) {
-        resizeRef = null
-        try { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId) } catch (err) { /* ignore */ }
-      }
-
-      const dragProps = { onPointerDown: onTitleDown, onPointerMove: onTitleMove, onPointerUp: onTitleUp, onPointerCancel: onTitleUp }
-      const rsProps = { onPointerDown: onRsDown, onPointerMove: onRsMove, onPointerUp: onRsUp, onPointerCancel: onRsUp }
-
-      // 贴靠助手预览（拖动中靠近边缘时显示）
-      let snapPreview = null
-      if (dragTarget) {
-        snapPreview = el('div', {
-          key: 'prev', className: 'xq-snap-preview xq-snap-' + dragTarget,
-          style: { width: ui.snapW || 380 }
-        })
-      }
-
-      // 最小化条
-      if (ui.minimized) {
-        const idxLine = fIdx.map(function (q) {
-          return q.name + ' ' + fmt(q.current) + ' ' + fmtPct(q.percent)
-        }).join(' · ')
-        let minStyle = null
-        if (ui.snapEdge === 'right') minStyle = { right: 0, top: 0, bottom: 0, width: ui.snapW, height: 'auto' }
-        else if (ui.snapEdge === 'left') minStyle = { left: 0, top: 0, bottom: 0, width: ui.snapW, height: 'auto' }
-        else if (ui.pos) minStyle = { left: ui.pos.x, top: ui.pos.y, right: 'auto', bottom: 'auto' }
-        return el('div', { className: 'xq-wrap' }, [
-          el('div', { key: 'min', className: 'xq-float xq-min' + (ui.snapEdge ? ' xq-snapped' : ''), style: minStyle, onClick: function () { ui.set({ minimized: false }) } }, [
-            el('span', { key: 'logo', className: 'xq-logo' }, [el('b', { key: 'b' }, '雪球'), ' mini']),
-            el('span', { key: 'sum', className: 'xq-sum' }, idxLine || '点击展开行情面板'),
-            el('span', { key: 'sp', className: 'xq-spacer' }),
-            el('button', { key: 'x', className: 'xq-btn-mini', onClick: function (e) { e.stopPropagation(); ui.set({ closed: true }) } }, '✕'),
-            el('span', { key: 'caret', className: 'xq-caret' }, '展开 ▾')
-          ]),
-          snapPreview
-        ])
-      }
-
-      const snapped = ui.snapEdge ? ' xq-snapped xq-narrow' : (ui.snap ? ' xq-snapped' : '')
-      const titleBar = el('div', {
-        className: 'xq-title', ...dragProps,
-        onDoubleClick: function (e) { e.stopPropagation(); toggleMax() }
-      }, [
-        el('span', { key: 'logo', className: 'xq-logo' }, [el('b', { key: 'b' }, '雪球'), ' mini']),
-        el('span', { key: 'st', className: 'xq-status' + (fOpen ? ' xq-live' : '') }, fOpen ? '● 盘中' : '已收盘'),
-        el('span', { key: 'upd', className: 'xq-update' }, ui.max ? '已最大化 · 拖动标题栏还原' : ui.snapEdge === 'right' ? '已贴右 · 拖走解除' : ui.snapEdge === 'left' ? '已贴左 · 拖走解除' : '拖到左/右边缘贴靠 · 双击最大化'),
-        el('span', { key: 'sp', className: 'xq-spacer' }),
-        el('button', { key: 'snap', className: 'xq-btn-mini', title: '循环：右下角 → 右侧窄栏 → 解除', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); toggleSnap() } }, ui.snapEdge === 'right' ? '◫' : ui.snap === 'br' ? '📌' : '📍'),
-        el('button', { key: 'max', className: 'xq-btn-mini', title: ui.max ? '还原（双击标题栏同效）' : '最大化（双击标题栏同效）', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); toggleMax() } }, ui.max ? '⤡' : '⤢'),
-        el('button', { key: 'dock', className: 'xq-btn-mini', title: '嵌入到输入框上方（不遮挡对话）', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); ui.set({ mode: 'docked', minimized: false }) } }, '嵌入'),
-        el('button', { key: 'min', className: 'xq-btn-mini', title: '收起', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); ui.set({ minimized: true }) } }, '—'),
-        el('button', { key: 'cls', className: 'xq-btn-mini', title: '关闭（点底部指数条重新打开）', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); ui.set({ closed: true }) } }, '✕')
-      ])
-
-      return el('div', { className: 'xq-wrap' }, [
-        el('div', { key: 'f', className: 'xq-float' + snapped, style: posStyle() }, [
-          titleBar,
-          el('div', { key: 'body', className: 'xq-body' }, [
-            el(XueqiuPanel, null)
-          ]),
-          el('div', { key: 'rs', className: 'xq-resize', ...rsProps })
-        ]),
-        snapPreview
-      ])
-    }
-
-    function posStyle() {
-      if (ui.max) return { left: 8, top: 8, right: 8, bottom: 8, width: 'auto', height: 'auto' }
-      if (ui.snapEdge === 'right') return { right: 0, top: 0, bottom: 0, left: 'auto', width: ui.snapW }
-      if (ui.snapEdge === 'left') return { left: 0, top: 0, bottom: 0, right: 'auto', width: ui.snapW }
-      if (ui.pos) return { left: ui.pos.x, top: ui.pos.y, right: 'auto', bottom: 'auto', width: ui.size.w, height: ui.size.h }
-      return { width: ui.size.w, height: ui.size.h }
-    }
-
-    // ---------- 嵌入外壳（conversation.input.dock）：输入框上方，不遮挡对话 ----------
-    function DockedShell() {
-      const [, force] = React.useState(0)
-      React.useEffect(function () {
-        const off = ui.subscribe(function () { force(function (x) { return x + 1 }) })
-        const offBus = bus.on(function (ev) {
-          if (ev === 'esc') { if (!ui.minimized) ui.set({ minimized: true }) }
-        })
-        return function () { off(); offBus() }
-      }, [])
-      if (ui.mode !== 'docked' || !ui.hydrated) return null
-
-      function onDwDown(e) {
-        if (e.pointerType === 'mouse' && e.button !== 0) return
-        resizeRef = { w: ui.dockW, h: 0, x: e.clientX, y: e.clientY }
-        try { e.currentTarget.setPointerCapture(e.pointerId) } catch (err) { /* ignore */ }
-      }
-      function onDwMove(e) {
-        if (!resizeRef) return
-        ui.set({ dockW: Math.min(Math.max(480, resizeRef.w + (e.clientX - resizeRef.x)), 1100) })
-      }
-      function onDwUp(e) {
-        resizeRef = null
-        try { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId) } catch (err) { /* ignore */ }
-      }
-
-      if (ui.minimized) {
-        return el('div', { className: 'xq-docked xq-docked-min', style: { width: ui.dockW }, onClick: function () { ui.set({ minimized: false }) } }, [
+      if (!ui.hydrated) return null
+      return el('div', { className: 'xq-dock' }, [
+        el('div', { key: 'head', className: 'xq-dock-head' }, [
           el('span', { key: 'logo', className: 'xq-logo' }, [el('b', { key: 'b' }, '雪球'), ' mini']),
-          el('span', { key: 'sum', className: 'xq-sum' }, '点击展开行情面板'),
+          el('span', { key: 'st', className: 'xq-status' }, '行情面板'),
+          el('span', { key: 'hint', className: 'xq-update' }, '已嵌入输入框上方 · Esc 收起'),
           el('span', { key: 'sp', className: 'xq-spacer' }),
-          el('span', { key: 'caret', className: 'xq-caret' }, '展开 ▾')
+          el('button', { key: 'min', className: 'xq-btn-mini', title: '收起（点右下角徽章重新打开）', onClick: function () { ui.set({ open: false }) } }, '收起 —')
+        ]),
+        el('div', { key: 'body', className: 'xq-dock-body' }, [
+          el(XueqiuPanel, { key: 'panel' })
         ])
-      }
-
-      return el('div', { className: 'xq-docked', style: { width: ui.dockW } }, [
-        el('div', { key: 'title', className: 'xq-title' }, [
-          el('span', { key: 'logo', className: 'xq-logo' }, [el('b', { key: 'b' }, '雪球'), ' mini']),
-          el('span', { key: 'hint', className: 'xq-update' }, '已嵌入 · 不遮挡对话'),
-          el('span', { key: 'sp', className: 'xq-spacer' }),
-          el('button', { key: 'float', className: 'xq-btn-mini', title: '切换回悬浮模式', onClick: function () { ui.set({ mode: 'floating', minimized: false }) } }, '悬浮'),
-          el('button', { key: 'min', className: 'xq-btn-mini', title: '收起', onClick: function () { ui.set({ minimized: true }) } }, '—')
-        ]),
-        el('div', { key: 'body', className: 'xq-body' }, [
-          el(XueqiuPanel, null)
-        ]),
-        el('div', { key: 'rs', className: 'xq-resize xq-resize-w', onPointerDown: onDwDown, onPointerMove: onDwMove, onPointerUp: onDwUp, onPointerCancel: onDwUp })
       ])
     }
 
-    // ---------- 输入框上方入口条（仅悬浮模式下显示） ----------
-    function Entry() {
-      const [indices, setIndices] = React.useState([])
+    // ---------- 迷你悬浮徽章（shell.overlay）：可拖动，点击开合面板 ----------
+    function MiniBadge() {
+      const [idx, setIdx] = React.useState([])
+      const [mOpen, setMOpen] = React.useState(true)
       const [, force] = React.useState(0)
       React.useEffect(function () {
         let alive = true
         function refresh() {
-          call('quote', { symbols: ['SH000001', 'SZ399001', 'SZ399006', 'SH000300'] }).then(function (data) {
-            if (alive) setIndices((data && data.list) || [])
+          call('quote', { symbols: ['SH000001', 'SZ399001'] }).then(function (data) {
+            if (!alive) return
+            setIdx((data && data.list) || [])
+            const st = data ? data.status : null
+            setMOpen(st === 5 || st === 6)
           }).catch(function () { /* 静默失败 */ })
         }
         refresh()
+        const stop = ctx.interval(refresh, 30000)
         const off = ui.subscribe(function () { force(function (x) { return x + 1 }) })
-        const stop = ctx.interval(refresh, 60000)
-        return function () { alive = false; off(); if (stop) stop() }
+        return function () { alive = false; if (stop) stop(); off() }
       }, [])
-      if (ui.mode === 'docked') return null
-      const line = indices.map(function (q) {
-        return q.name + ' ' + fmt(q.current) + ' ' + fmtPct(q.percent)
-      }).join(' · ')
-      return el('div', { className: 'xq-entry', onClick: function () { bus.emit('open') } }, [
-        el('span', { key: 'logo', className: 'xq-logo' }, [el('b', { key: 'b' }, '雪球'), ' mini']),
-        el('span', { key: 'sum', className: 'xq-sum' }, line || '点击打开行情面板'),
-        el('span', { key: 'caret', className: 'xq-caret' }, '打开 ▾')
+
+      function onDown(e) {
+        if (e.pointerType === 'mouse' && e.button !== 0) return
+        badgeDrag = { x: e.clientX, y: e.clientY }
+        badgeMoved = false
+        try { e.currentTarget.setPointerCapture(e.pointerId) } catch (err) { /* ignore */ }
+      }
+      function onMove(e) {
+        if (!badgeDrag) return
+        const dx = e.clientX - badgeDrag.x, dy = e.clientY - badgeDrag.y
+        if (Math.abs(dx) + Math.abs(dy) > 4) badgeMoved = true
+        if (!badgeMoved) return
+        const vp = viewport()
+        const w = e.currentTarget.offsetWidth || 160
+        const h = e.currentTarget.offsetHeight || 30
+        let x = e.clientX - w / 2
+        let y = e.clientY - h / 2
+        x = Math.min(Math.max(4, x), (vp ? vp.w : 1200) - w - 4)
+        y = Math.min(Math.max(4, y), (vp ? vp.h : 800) - h - 4)
+        ui.set({ badgePos: { x: x, y: y } })
+      }
+      function onUp(e) {
+        badgeDrag = null
+        try { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId) } catch (err) { /* ignore */ }
+        if (!badgeMoved) ui.set({ open: !ui.open })
+      }
+
+      const sh = idx[0], sz = idx[1]
+      const style = ui.badgePos
+        ? { left: ui.badgePos.x, top: ui.badgePos.y, right: 'auto', bottom: 'auto' }
+        : null
+      return el('div', {
+        className: 'xq-badge',
+        style: style,
+        title: '点击开合行情面板 · 拖动调整位置',
+        onPointerDown: onDown, onPointerMove: onMove, onPointerUp: onUp, onPointerCancel: onUp
+      }, [
+        el('span', { key: 'logo' }, [el('b', { key: 'b' }, '雪球'), 'mini']),
+        el('span', { key: 'st', className: 'xq-status' + (mOpen ? ' xq-live' : '') }, mOpen ? '● 盘中' : '休市'),
+        sh ? el('span', { key: 'sh' }, [
+          el('span', { key: 'n', className: 'xq-badge-hint' }, sh.name + ' '),
+          el('span', { key: 'v', className: 'xq-badge-val ' + colorOf(sh.percent) }, fmt(sh.current)),
+          el('span', { key: 'p', className: colorOf(sh.percent) }, ' ' + fmtPct(sh.percent))
+        ]) : null,
+        sz ? el('span', { key: 'sz' }, [
+          el('span', { key: 'n', className: 'xq-badge-hint' }, ' 深成指 '),
+          el('span', { key: 'p', className: colorOf(sz.percent) }, fmtPct(sz.percent))
+        ]) : null,
+        el('span', { key: 'ct', className: 'xq-caret' }, ui.open ? '▾' : '▴')
       ])
     }
 
-    // ---------- 底部指数条 ----------
+    // ---------- 底部指数条（会话页，输入框下方氛围行） ----------
     function Ticker() {
       const [indices, setIndices] = React.useState([])
       React.useEffect(function () {
@@ -1209,53 +972,22 @@ return {
           el('span', { key: 'p', className: colorOf(q.percent) }, fmtPct(q.percent))
         ])
       })
-      return el('div', { className: 'xq-ticker', onClick: function () { bus.emit('open') } }, kids)
+      return el('div', { className: 'xq-ticker', onClick: function () { ui.set({ open: true }) } }, kids)
     }
-
-    // 追加样式：嵌入外壳 / 缩放手柄 / 磁吸动画
-    styles.insert(
-      '.xq-docked{background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-radius:10px;overflow:hidden;position:relative;font-size:13px;line-height:1.45;color:var(--dsw-alias-label-primary);margin-bottom:2px;}\n' +
-      '.xq-docked *{box-sizing:border-box;}\n' +
-      '.xq-docked-min{display:flex;align-items:center;gap:10px;cursor:pointer;padding:6px 12px;}\n' +
-      '.xq-docked .xq-title{cursor:default;}\n' +
-      '.xq-resize{position:absolute;right:2px;bottom:2px;width:18px;height:18px;cursor:nwse-resize;z-index:6;}\n' +
-      '.xq-resize::after{content:"";position:absolute;right:4px;bottom:4px;width:8px;height:8px;border-right:2px solid var(--dsw-alias-label-secondary);border-bottom:2px solid var(--dsw-alias-label-secondary);opacity:.55;}\n' +
-      '.xq-resize-w{position:absolute;right:0;top:0;bottom:0;width:10px;cursor:ew-resize;z-index:6;}\n' +
-      '.xq-resize-w::after{display:none;}\n' +
-      '.xq-snapped{transition:left .16s ease, top .16s ease;}\n' +
-      '.xq-wrap{pointer-events:none;position:fixed;inset:0;z-index:1200;}\n' +
-      '.xq-wrap .xq-float{pointer-events:auto;}\n' +
-      '.xq-snap-preview{position:fixed;top:8px;bottom:8px;border:2px solid var(--dsw-alias-brand-primary);border-radius:10px;background:var(--dsw-alias-brand-primary);opacity:.13;pointer-events:none;z-index:1199;}\n' +
-      '.xq-snap-right{right:8px;}\n' +
-      '.xq-snap-left{left:8px;}\n' +
-      '.xq-float.xq-narrow .xq-grid-hd,.xq-float.xq-narrow .xq-grid-row{grid-template-columns:1.5fr 1fr 1fr 62px;}\n' +
-      '.xq-float.xq-narrow .xq-vol-col{display:none;}\n' +
-      '.xq-float.xq-narrow .xq-idx-card{min-width:88px;padding:5px 6px;}\n' +
-      '.xq-float.xq-narrow .xq-idx-cur{font-size:12px;}\n' +
-      '.xq-float.xq-narrow .xq-stats{grid-template-columns:repeat(2,1fr);}\n' +
-      '.xq-float.xq-narrow .xq-detail-cur{font-size:16px;}\n' +
-      '.xq-float.xq-narrow .xq-periods button,.xq-float.xq-narrow .xq-modes button{padding:2px 6px;}\n'
-    )
 
     // ---------- 注册 ----------
     const slots = ctx.get('slots')
     if (slots === undefined) return
+    slots.inject('conversation.input.dock', function () {
+      return slots.register(
+        { name: 'conversation.input.dock', id: 'xueqiu-panel', order: 30 },
+        function () { return ui.open ? el(DockPanel, null) : null }
+      )
+    })
     slots.inject('shell.overlay', function () {
       return slots.register(
-        { name: 'shell.overlay', id: 'xueqiu-panel' },
-        function () { return el(FloatingShell, null) }
-      )
-    })
-    slots.inject('conversation.input.dock', function () {
-      return slots.register(
-        { name: 'conversation.input.dock', id: 'xueqiu-panel-entry', order: 30 },
-        function () { return el(Entry, null) }
-      )
-    })
-    slots.inject('conversation.input.dock', function () {
-      return slots.register(
-        { name: 'conversation.input.dock', id: 'xueqiu-docked', order: 31 },
-        function () { return el(DockedShell, null) }
+        { name: 'shell.overlay', id: 'xueqiu-badge' },
+        function () { return el(MiniBadge, null) }
       )
     })
     slots.inject('conversation.composer.dock', function () {

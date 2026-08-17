@@ -390,29 +390,19 @@ return {
     async function actUiGet() {
       const s = await loadUiState()
       return {
-        mode: s.mode || 'floating', pos: s.pos || null,
-        size: (s.size && isFinite(Number(s.size.w)) && isFinite(Number(s.size.h))) ? { w: Number(s.size.w), h: Number(s.size.h) } : null,
-        dockW: s.dockW || null, snap: s.snap || null,
-        snapEdge: s.snapEdge || null, snapW: s.snapW || 380,
-        tab: s.tab || 'market', minimized: !!s.minimized
+        tab: s.tab || 'market', open: s.open !== false,
+        badgePos: (s.badgePos && isFinite(Number(s.badgePos.x)) && isFinite(Number(s.badgePos.y)))
+          ? { x: Number(s.badgePos.x), y: Number(s.badgePos.y) } : null
       }
     }
 
     async function actUiSet(args) {
       const s = await loadUiState()
-      if (args.pos && typeof args.pos === 'object' && isFinite(Number(args.pos.x)) && isFinite(Number(args.pos.y))) {
-        s.pos = { x: Number(args.pos.x), y: Number(args.pos.y) }
-      }
       if (args.tab !== undefined) s.tab = String(args.tab)
-      if (args.minimized !== undefined) s.minimized = !!args.minimized
-      if (args.mode === 'floating' || args.mode === 'docked') s.mode = args.mode
-      if (args.size && typeof args.size === 'object' && isFinite(Number(args.size.w)) && isFinite(Number(args.size.h))) {
-        s.size = { w: Number(args.size.w), h: Number(args.size.h) }
+      if (args.open !== undefined) s.open = !!args.open
+      if (args.badgePos && typeof args.badgePos === 'object' && isFinite(Number(args.badgePos.x)) && isFinite(Number(args.badgePos.y))) {
+        s.badgePos = { x: Number(args.badgePos.x), y: Number(args.badgePos.y) }
       }
-      if (args.dockW !== undefined && isFinite(Number(args.dockW))) s.dockW = Number(args.dockW)
-      if ('snap' in args && args.snap !== undefined) s.snap = args.snap === null ? null : String(args.snap)
-      if (args.snapEdge === 'left' || args.snapEdge === 'right' || args.snapEdge === null) s.snapEdge = args.snapEdge
-      if (args.snapW !== undefined && isFinite(Number(args.snapW))) s.snapW = Number(args.snapW)
       await saveUiState()
       return { ok: true }
     }

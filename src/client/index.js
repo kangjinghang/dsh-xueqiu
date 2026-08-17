@@ -1,5 +1,3 @@
-import * as React from 'react'
-
 export default {
 
   inject: ['timer', 'connection'],
@@ -31,7 +29,11 @@ export default {
       '.xq-tab:hover{color:var(--dsw-alias-label-primary);}\n' +
       '.xq-tab-active{color:var(--dsw-alias-brand-primary);border-bottom-color:var(--dsw-alias-brand-primary);font-weight:600;}\n' +
       '.xq-idx{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;}\n' +
-      '.xq-idx-card{flex:1;min-width:120px;background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);border-radius:8px;padding:6px 8px;}\n' +
+      '.xq-idx-card{flex:1;min-width:120px;background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);border-radius:8px;padding:6px 8px;cursor:pointer;}\n' +
+      '.xq-idx-card:hover{border-color:var(--dsw-alias-brand-primary);}\n' +
+      '.xq-sort-h{cursor:pointer;user-select:none;}\n' +
+      '.xq-sort-h:hover{color:var(--dsw-alias-label-primary);}\n' +
+      '.xq-sort-on{color:var(--dsw-alias-label-primary);font-weight:600;}\n' +
       '.xq-idx-name{font-size:11px;color:var(--dsw-alias-label-secondary);}\n' +
       '.xq-idx-row{display:flex;align-items:baseline;gap:6px;}\n' +
       '.xq-idx-cur{font-size:14px;font-weight:700;}\n' +
@@ -71,10 +73,15 @@ export default {
       '.xq-stat-v{font-size:12.5px;font-weight:600;}\n' +
       '.xq-card{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);border-radius:8px;padding:8px 10px;margin-bottom:8px;}\n' +
       '.xq-card-t{font-size:12px;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:8px;}\n' +
-      '.xq-periods{display:inline-flex;gap:2px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:1px;}\n' +
+      '.xq-periods{display:inline-flex;flex-wrap:wrap;gap:2px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:1px;}\n' +
       '.xq-periods button,.xq-modes button{font-size:11.5px;border:none;background:none;color:var(--dsw-alias-label-secondary);padding:2px 9px;border-radius:5px;cursor:pointer;}\n' +
       '.xq-periods button.xq-on,.xq-modes button.xq-on{background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);font-weight:600;}\n' +
       '.xq-chart{width:100%;height:auto;display:block;}\n' +
+      '.xq-chart-wrap{position:relative;}\n' +
+      '.xq-tip{position:absolute;top:4px;z-index:5;pointer-events:none;background:var(--dsw-alias-bg-overlay);border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:4px 8px;font-size:10.5px;line-height:1.6;color:var(--dsw-alias-label-primary);box-shadow:0 4px 14px rgba(0,0,0,.28);white-space:nowrap;}\n' +
+      '.xq-tip-d{font-weight:700;}\n' +
+      '.xq-tip-r{display:flex;gap:8px;}\n' +
+      '.xq-tip-k{color:var(--dsw-alias-label-secondary);}\n' +
       '.xq-chart-labels{display:flex;justify-content:space-between;font-size:10.5px;color:var(--dsw-alias-label-secondary);margin-top:2px;}\n' +
       '.xq-ma-legend{display:flex;gap:10px;font-size:10.5px;color:var(--dsw-alias-label-secondary);}\n' +
       '.xq-kol{display:flex;flex-wrap:wrap;gap:6px;}\n' +
@@ -98,11 +105,9 @@ export default {
     function el(type, props, children) { return React.createElement(type, props, children) }
 
     async function call(action, args) {
-      const connection = ctx.get('connection')
-      if (!connection || !connection.rpc) throw new Error('connection 服务不可用，无法访问雪球')
-      const r = await connection.rpc.call('/xueqiu', 'call', { action: action, args: args || {} })
-      if (!r || !r.ok) throw new Error((r && r.error && r.error.message) || '调用失败')
-      return r.value
+      const res = await ctx.connection.rpc.call('/xueqiu', 'call', { action: action, args: args || {} })
+      if (!res || !res.ok) throw new Error((res && (res.error && (res.error.message || res.error.code) || res.error)) || '调用失败')
+      return res.value
     }
 
     function fmt(v, d) {
@@ -146,6 +151,12 @@ export default {
       function p(n) { return n < 10 ? '0' + n : String(n) }
       return p(d.getMonth() + 1) + '-' + p(d.getDate())
     }
+    function fmtFullDay(ts) {
+      if (!ts) return ''
+      const d = new Date(Number(ts))
+      function p(n) { return n < 10 ? '0' + n : String(n) }
+      return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate())
+    }
     function colorOf(pct) {
       if (pct === null || pct === undefined) return 'xq-flat'
       const n = Number(pct)
@@ -176,17 +187,18 @@ export default {
 
     // （saveUi / dragRef / ui 共享状态见下方新块）
 
-    // ---------- K线蜡烛图（含成交量与均线） ----------
+    // ---------- K线蜡烛图（含成交量与均线 + 十字光标/悬浮详情） ----------
     function KlineChart(props) {
       const rows = props.rows || []
+      const [hi, setHi] = React.useState(null)
       if (!rows.length) return el('div', { className: 'xq-muted' }, '暂无K线数据')
       const W = 640, MAIN = 150, VOL = 44, PAD = 6, GAP = 4
       const H = MAIN + VOL + GAP + PAD
       let min = Infinity, max = -Infinity
       for (let i = 0; i < rows.length; i++) {
-        const lo = Number(rows[i].low), hi = Number(rows[i].high)
-        if (lo < min) min = lo
-        if (hi > max) max = hi
+        const rlo = Number(rows[i].low), rhi = Number(rows[i].high)
+        if (rlo < min) min = rlo
+        if (rhi > max) max = rhi
       }
       if (!isFinite(min) || !isFinite(max) || min === max) { min -= 1; max += 1 }
       const range = max - min
@@ -213,6 +225,7 @@ export default {
         }
         return out
       }
+      const ma5 = maArr(5), ma10 = maArr(10), ma20 = maArr(20)
       function poly(arr, color) {
         const pts = []
         for (let i = 0; i < arr.length; i++) {
@@ -240,16 +253,62 @@ export default {
         kids.push(el('rect', { key: 'v' + i, x: x - bw / 2, y: vBottom - vh, width: bw, height: vh, fill: color, opacity: 0.45 }))
       }
       const last = rows[n - 1]
-      return el('div', null, [
-        el('svg', { key: 's', className: 'xq-chart', viewBox: '0 0 ' + W + ' ' + H }, [
+      function onMove(e) {
+        const rect = e.currentTarget.getBoundingClientRect()
+        if (!rect || !rect.width) return
+        const px = (e.clientX - rect.left) / rect.width * W
+        let i = Math.floor((px - PAD) / step)
+        if (i < 0) i = 0
+        if (i > n - 1) i = n - 1
+        setHi(i)
+      }
+      // 十字光标 + 悬浮详情
+      let cross = null, tip = null
+      if (hi !== null && hi >= 0 && hi < n) {
+        const r = rows[hi]
+        const cx = PAD + step * hi + step / 2
+        const cy = yOf(Number(r.close))
+        cross = [
+          el('line', { key: 'cv', x1: cx, y1: PAD, x2: cx, y2: vBottom, stroke: 'var(--dsw-alias-label-secondary)', strokeWidth: 0.6, strokeDasharray: '3 3', opacity: 0.7 }),
+          el('line', { key: 'ch', x1: PAD, y1: cy, x2: W - PAD, y2: cy, stroke: 'var(--dsw-alias-label-secondary)', strokeWidth: 0.6, strokeDasharray: '3 3', opacity: 0.7 })
+        ]
+        tip = el('div', {
+          key: 'tip', className: 'xq-tip',
+          style: { left: (cx / W * 100) + '%', transform: cx > W * 0.55 ? 'translateX(calc(-100% - 10px))' : 'translateX(10px)' }
+        }, [
+          el('div', { key: 'd', className: 'xq-tip-d' }, fmtFullDay(r.timestamp)),
+          el('div', { key: 'r1', className: 'xq-tip-r' }, [
+            el('span', { key: 'a' }, [el('span', { key: 'k', className: 'xq-tip-k' }, '开 '), fmt(r.open)]),
+            el('span', { key: 'b' }, [el('span', { key: 'k', className: 'xq-tip-k' }, '高 '), fmt(r.high)]),
+            el('span', { key: 'c' }, [el('span', { key: 'k', className: 'xq-tip-k' }, '低 '), fmt(r.low)]),
+            el('span', { key: 'e', className: colorOf(r.percent) }, [el('span', { key: 'k', className: 'xq-tip-k' }, '收 '), fmt(r.close)])
+          ]),
+          el('div', { key: 'r2', className: 'xq-tip-r' }, [
+            el('span', { key: 'p', className: colorOf(r.percent) }, [el('span', { key: 'k', className: 'xq-tip-k' }, '涨跌 '), fmtPct(r.percent)]),
+            el('span', { key: 'v' }, [el('span', { key: 'k', className: 'xq-tip-k' }, '量 '), fmtVol(r.volume)])
+          ]),
+          el('div', { key: 'r3', className: 'xq-tip-r' }, [
+            el('span', { key: 'm5', style: { color: '#f59e0b' } }, 'MA5 ' + (ma5[hi] === null ? '--' : fmt(ma5[hi]))),
+            el('span', { key: 'm10', style: { color: '#3b82f6' } }, 'MA10 ' + (ma10[hi] === null ? '--' : fmt(ma10[hi]))),
+            el('span', { key: 'm20', style: { color: '#a855f7' } }, 'MA20 ' + (ma20[hi] === null ? '--' : fmt(ma20[hi])))
+          ])
+        ])
+      }
+      return el('div', { className: 'xq-chart-wrap' }, [
+        tip,
+        el('svg', {
+          key: 's', className: 'xq-chart', viewBox: '0 0 ' + W + ' ' + H,
+          onMouseMove: onMove, onMouseLeave: function () { setHi(null) }
+        }, [
           el('line', { key: 'base', x1: PAD, y1: vTop, x2: W - PAD, y2: vTop, stroke: 'var(--dsw-alias-border-l2)', strokeWidth: 1 }),
-          poly(maArr(5), '#f59e0b'),
-          poly(maArr(10), '#3b82f6'),
-          poly(maArr(20), '#a855f7'),
+          poly(ma5, '#f59e0b'),
+          poly(ma10, '#3b82f6'),
+          poly(ma20, '#a855f7'),
           kids,
-          el('text', { key: 'hi', x: PAD, y: 10, fontSize: 9, fill: 'var(--dsw-alias-label-secondary)' }, '高 ' + fmt(max)),
-          el('text', { key: 'lo', x: PAD, y: MAIN - 2, fontSize: 9, fill: 'var(--dsw-alias-label-secondary)' }, '低 ' + fmt(min)),
-          el('text', { key: 'last', x: W - PAD, y: Math.max(yOf(Number(last.close)) - 4, 10), fontSize: 9, fill: upColor(Number(last.close) >= Number(rows[n - 2] ? rows[n - 2].close : last.open)), textAnchor: 'end' }, fmt(last.close))
+          cross,
+          el('text', { key: 'hiT', x: PAD, y: 10, fontSize: 9, fill: 'var(--dsw-alias-label-secondary)' }, '高 ' + fmt(max)),
+          el('text', { key: 'loT', x: PAD, y: MAIN - 2, fontSize: 9, fill: 'var(--dsw-alias-label-secondary)' }, '低 ' + fmt(min)),
+          el('text', { key: 'lastT', x: W - PAD, y: Math.max(yOf(Number(last.close)) - 4, 10), fontSize: 9, fill: upColor(Number(last.close) >= Number(rows[n - 2] ? rows[n - 2].close : last.open)), textAnchor: 'end' }, fmt(last.close))
         ]),
         el('div', { key: 'lb', className: 'xq-chart-labels' }, [
           el('span', { key: 'd' }, fmtDay(rows[0].timestamp) + ' ~ ' + fmtDay(last.timestamp)),
@@ -263,9 +322,10 @@ export default {
       ])
     }
 
-    // ---------- 分时图 ----------
+    // ---------- 分时图（含十字光标/悬浮详情） ----------
     function MinuteChart(props) {
       const items = props.items || []
+      const [hi, setHi] = React.useState(null)
       const lastClose = Number(props.lastClose)
       if (!items.length) return el('div', { className: 'xq-muted' }, '暂无分时数据')
       const W = 640, H = 170, PAD = 6
@@ -291,16 +351,52 @@ export default {
       const up = lastClose ? (last >= lastClose) : true
       const stroke = upColor(up)
       const yBase = lastClose ? yOf(lastClose) : null
+      function onMove(e) {
+        if (items.length < 2) return
+        const rect = e.currentTarget.getBoundingClientRect()
+        if (!rect || !rect.width) return
+        const px = (e.clientX - rect.left) / rect.width * W
+        let i = Math.round((px - PAD) / (W - PAD * 2) * (items.length - 1))
+        if (i < 0) i = 0
+        if (i > items.length - 1) i = items.length - 1
+        setHi(i)
+      }
+      let cross = null, tip = null
+      if (hi !== null && hi >= 0 && hi < items.length) {
+        const it = items[hi]
+        const cx = xOf(hi), cy = yOf(Number(it.current))
+        const pct = lastClose ? (Number(it.current) - lastClose) / lastClose * 100 : null
+        cross = [
+          el('line', { key: 'cv', x1: cx, y1: PAD, x2: cx, y2: H - PAD, stroke: 'var(--dsw-alias-label-secondary)', strokeWidth: 0.6, strokeDasharray: '3 3', opacity: 0.7 }),
+          el('line', { key: 'ch', x1: PAD, y1: cy, x2: W - PAD, y2: cy, stroke: 'var(--dsw-alias-label-secondary)', strokeWidth: 0.6, strokeDasharray: '3 3', opacity: 0.7 })
+        ]
+        tip = el('div', {
+          key: 'tip', className: 'xq-tip',
+          style: { left: (cx / W * 100) + '%', transform: cx > W * 0.55 ? 'translateX(calc(-100% - 10px))' : 'translateX(10px)' }
+        }, [
+          el('div', { key: 'd', className: 'xq-tip-d' }, fmtDay(it.timestamp) + ' ' + fmtTime(it.timestamp)),
+          el('div', { key: 'r1', className: 'xq-tip-r' }, [
+            el('span', { key: 'p', className: colorOf(pct) }, [el('span', { key: 'k', className: 'xq-tip-k' }, '价 '), fmt(it.current)]),
+            el('span', { key: 'a' }, [el('span', { key: 'k', className: 'xq-tip-k' }, '均价 '), fmt(it.avg_price)]),
+            el('span', { key: 'g', className: colorOf(pct) }, [el('span', { key: 'k', className: 'xq-tip-k' }, '涨跌 '), fmtPct(pct)])
+          ])
+        ])
+      }
       const kids = [
         yBase !== null ? el('line', { key: 'base', x1: PAD, y1: yBase, x2: W - PAD, y2: yBase, stroke: 'var(--dsw-alias-border-l2)', strokeWidth: 1, strokeDasharray: '3 3' }) : null,
         el('polyline', { key: 'avg', points: avgPts.join(' '), fill: 'none', stroke: 'var(--dsw-alias-state-warn-primary)', strokeWidth: 1 }),
         el('polyline', { key: 'p', points: pricePts.join(' '), fill: 'none', stroke: stroke, strokeWidth: 1.6 }),
-        el('text', { key: 'hi', x: PAD, y: 10, fontSize: 9, fill: 'var(--dsw-alias-label-secondary)' }, '高 ' + fmt(max)),
-        el('text', { key: 'lo', x: PAD, y: H - 4, fontSize: 9, fill: 'var(--dsw-alias-label-secondary)' }, '低 ' + fmt(min)),
-        el('text', { key: 'last', x: W - PAD, y: Math.max(yOf(last) - 4, 10), fontSize: 9, fill: stroke, textAnchor: 'end' }, fmt(last))
+        cross,
+        el('text', { key: 'hiT', x: PAD, y: 10, fontSize: 9, fill: 'var(--dsw-alias-label-secondary)' }, '高 ' + fmt(max)),
+        el('text', { key: 'loT', x: PAD, y: H - 4, fontSize: 9, fill: 'var(--dsw-alias-label-secondary)' }, '低 ' + fmt(min)),
+        el('text', { key: 'lastT', x: W - PAD, y: Math.max(yOf(last) - 4, 10), fontSize: 9, fill: stroke, textAnchor: 'end' }, fmt(last))
       ]
-      return el('div', null, [
-        el('svg', { key: 's', className: 'xq-chart', viewBox: '0 0 ' + W + ' ' + H }, kids),
+      return el('div', { className: 'xq-chart-wrap' }, [
+        tip,
+        el('svg', {
+          key: 's', className: 'xq-chart', viewBox: '0 0 ' + W + ' ' + H,
+          onMouseMove: onMove, onMouseLeave: function () { setHi(null) }
+        }, kids),
         el('div', { key: 'lb', className: 'xq-chart-labels' }, [
           el('span', { key: 'd' }, fmtDay(items[0].timestamp) + ' 分时'),
           el('span', { key: 'n' }, items.length + ' 笔')
@@ -311,7 +407,7 @@ export default {
     // ---------- 共享 UI 状态（悬浮/嵌入/位置/尺寸/标签页） ----------
     const ui = {
       mode: 'floating', pos: null, size: { w: 720, h: 640 }, dockW: 720,
-      snap: null, snapEdge: null, snapW: 380,
+      snap: null, snapEdge: null, snapW: 380, max: false,
       minimized: false, tab: 'market', closed: false, hydrated: false,
       _fns: [],
       subscribe: function (fn) {
@@ -377,6 +473,8 @@ export default {
       const [updatedAt, setUpdatedAt] = React.useState(null)
       const [err, setErr] = React.useState('')
       const [loading, setLoading] = React.useState(true)
+      const [sortK, setSortK] = React.useState('default')
+      const [sortAsc, setSortAsc] = React.useState(false)
       const tab = ui.tab
       function setTab(t) { ui.set({ tab: t }) }
 
@@ -432,25 +530,47 @@ export default {
         return function () { if (stopA) stopA(); if (stopB) stopB() }
       }, [marketOpen])
 
-      // 个股详情
+      // 个股详情（指数等无财务/热议数据的标的逐项容错，不整单失败）
       React.useEffect(function () {
         if (!view) { setDetail(null); return }
         let alive = true
         setDetail(null)
+        function fb(p) { return p.catch(function () { return null }) }
         Promise.all([
-          call('quoteDetail', { symbol: view }),
-          call('kline', { symbol: view, period: klinePeriod, count: 120 }),
-          call('minute', { symbol: view }),
-          call('finance', { symbol: view }),
-          call('kol', { symbol: view, count: 6 })
+          fb(call('quoteDetail', { symbol: view })),
+          fb(call('kline', { symbol: view, period: klinePeriod, count: 120 })),
+          fb(call('minute', { symbol: view })),
+          fb(call('finance', { symbol: view })),
+          fb(call('kol', { symbol: view, count: 6 }))
         ]).then(function (res) {
           if (!alive) return
-          setDetail({ quote: res[0].quote, kline: res[1], minute: res[2], finance: res[3], kol: (res[4] && res[4].list) || [] })
+          setDetail({
+            quote: (res[0] && res[0].quote) || {},
+            kline: res[1] || { rows: [] },
+            minute: res[2] || { items: [], last_close: null },
+            finance: res[3] || { list: [] },
+            kol: (res[4] && res[4].list) || []
+          })
+          if (!res[0]) setErr('详情加载失败，数据可能不完整')
         }).catch(function (e) {
           if (alive) setErr(String((e && e.message) || e))
         })
         return function () { alive = false }
       }, [view, klinePeriod])
+
+      // Esc 逐级返回：先关详情，再通知外壳收起（输入框内不触发）
+      React.useEffect(function () {
+        if (typeof window === 'undefined' || !window.addEventListener) return function () {}
+        function onKey(e) {
+          if (e.key !== 'Escape') return
+          const t = e.target
+          if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+          if (view) setView(null)
+          else bus.emit('esc')
+        }
+        window.addEventListener('keydown', onKey)
+        return function () { window.removeEventListener('keydown', onKey) }
+      }, [view])
 
       function openDetail(symbol) {
         setChartMode('kline')
@@ -516,8 +636,25 @@ export default {
 
       // 行情 tab
       function MarketTab() {
+        const sorted = quotes.slice()
+        if (sortK !== 'default') {
+          sorted.sort(function (a, b) {
+            const av = Number(a[sortK]), bv = Number(b[sortK])
+            const an = isFinite(av) ? av : -Infinity
+            const bn = isFinite(bv) ? bv : -Infinity
+            return sortAsc ? an - bn : bn - an
+          })
+        }
+        function sortBy(k) {
+          if (sortK === k) setSortAsc(!sortAsc)
+          else { setSortK(k); setSortAsc(false) }
+        }
+        function arrow(k) { return sortK === k ? (sortAsc ? ' ▲' : ' ▼') : '' }
         const idxKids = indices.map(function (q) {
-          return el('div', { key: q.symbol, className: 'xq-idx-card' }, [
+          return el('div', {
+            key: q.symbol, className: 'xq-idx-card', title: '查看 ' + (q.name || q.symbol) + ' 详情',
+            onClick: function () { openDetail(q.symbol) }
+          }, [
             el('div', { key: 'n', className: 'xq-idx-name' }, q.name),
             el('div', { key: 'r', className: 'xq-idx-row' }, [
               el('span', { key: 'c', className: 'xq-idx-cur ' + colorOf(q.percent) }, fmt(q.current)),
@@ -525,8 +662,8 @@ export default {
             ])
           ])
         })
-        const rows = quotes.map(function (q) {
-          return el('div', { key: q.symbol, className: 'xq-grid-row' }, [
+        const rows = sorted.map(function (q) {
+          return el('div', { key: q.symbol, className: 'xq-grid-row', onClick: function () { openDetail(q.symbol) } }, [
             el('div', { key: 'n' }, [
               el('div', { key: 'a', className: 'xq-name' }, q.name),
               el('div', { key: 'b', className: 'xq-sub' }, q.symbol)
@@ -535,17 +672,21 @@ export default {
             el('div', { key: 'p', className: colorOf(q.percent) }, fmtPct(q.percent)),
             el('div', { key: 'v', className: 'xq-sub xq-vol-col' }, fmtVol(q.volume)),
             el('div', { key: 'a2', className: 'xq-actions' }, [
-              el('button', { key: 'd', className: 'xq-btn-mini', onClick: function () { openDetail(q.symbol) } }, '详情'),
-              el('button', { key: 'r', className: 'xq-btn-mini', onClick: function () { removeWatch(q.symbol) } }, '×')
+              el('button', { key: 'd', className: 'xq-btn-mini', onClick: function (e) { e.stopPropagation(); openDetail(q.symbol) } }, '详情'),
+              el('button', { key: 'r', className: 'xq-btn-mini', title: '移除自选', onClick: function (e) { e.stopPropagation(); removeWatch(q.symbol) } }, '×')
             ])
           ])
         })
         return el('div', null, [
           el('div', { key: 'idx', className: 'xq-idx' }, idxKids),
           el('div', { key: 'wl', className: 'xq-grid' }, [
-            el('div', { key: 'h', className: 'xq-grid-hd' }, ['名称', '现价', '涨跌幅', '成交量', '操作'].map(function (t, i) {
-              return el('span', { key: i }, t)
-            })),
+            el('div', { key: 'h', className: 'xq-grid-hd' }, [
+              el('span', { key: 'c0' }, '名称'),
+              el('span', { key: 'c1', className: 'xq-sort-h' + (sortK === 'current' ? ' xq-sort-on' : ''), onClick: function () { sortBy('current') } }, '现价' + arrow('current')),
+              el('span', { key: 'c2', className: 'xq-sort-h' + (sortK === 'percent' ? ' xq-sort-on' : ''), onClick: function () { sortBy('percent') } }, '涨跌幅' + arrow('percent')),
+              el('span', { key: 'c3' }, '成交量'),
+              el('span', { key: 'c4' }, '操作')
+            ]),
             rows.length ? rows : el('div', { key: 'empty', className: 'xq-grid-row' }, el('span', { key: 'e', className: 'xq-muted' }, '自选股为空，去「搜索」或下方添加'))
           ]),
           el('div', { key: 'add', className: 'xq-search-row' }, [
@@ -611,12 +752,16 @@ export default {
                 el('button', { key: 'm', className: chartMode === 'minute' ? 'xq-on' : '', onClick: function () { setChartMode('minute') } }, '分时')
               ]),
               el('span', { key: 'sp', className: 'xq-spacer' }),
-              chartMode === 'kline' ? el('span', { key: 'pd', className: 'xq-periods' }, ['day', 'week', 'month', '60m'].map(function (p) {
-                return el('button', {
-                  key: p, className: klinePeriod === p ? 'xq-on' : '',
-                  onClick: function () { setKlinePeriod(p) }
-                }, p === 'day' ? '日K' : p === 'week' ? '周K' : p === 'month' ? '月K' : '60分')
-              })) : null
+              chartMode === 'kline' ? el('span', { key: 'pd', className: 'xq-periods' }, (function () {
+                const ps = ['5m', '15m', '30m', '60m', 'day', 'week', 'month']
+                const lb = { '5m': '5分', '15m': '15分', '30m': '30分', '60m': '60分', day: '日K', week: '周K', month: '月K' }
+                return ps.map(function (p) {
+                  return el('button', {
+                    key: p, className: klinePeriod === p ? 'xq-on' : '',
+                    onClick: function () { setKlinePeriod(p) }
+                  }, lb[p] || p)
+                })
+              })()) : null
             ]),
             chartMode === 'kline'
               ? el(KlineChart, { key: 'c', rows: kl.rows })
@@ -654,7 +799,7 @@ export default {
             }, m[1])
           })),
           el('div', { key: 'list', className: 'xq-grid' }, hot.map(function (it, i) {
-            return el('div', { key: it.symbol, className: 'xq-hot-row' }, [
+            return el('div', { key: it.symbol, className: 'xq-hot-row', onClick: function () { openDetail(it.symbol) } }, [
               el('span', { key: 'r', className: 'xq-rank' }, String(i + 1)),
               el('div', { key: 'n' }, [
                 el('div', { key: 'a', className: 'xq-name' }, it.name),
@@ -663,7 +808,7 @@ export default {
               el('span', { key: 'sp', className: 'xq-spacer' }),
               el('span', { key: 'c', className: colorOf(it.percent) }, fmt(it.current)),
               el('span', { key: 'p', className: colorOf(it.percent) }, fmtPct(it.percent)),
-              el('button', { key: 'd', className: 'xq-btn-mini', onClick: function () { openDetail(it.symbol) } }, '详情')
+              el('button', { key: 'd', className: 'xq-btn-mini', onClick: function (e) { e.stopPropagation(); openDetail(it.symbol) } }, '详情')
             ])
           }))
         ])
@@ -781,6 +926,7 @@ export default {
         })
         const offBus = bus.on(function (ev) {
           if (ev === 'open') { ui.set({ closed: false, minimized: false, mode: 'floating' }) }
+          else if (ev === 'esc') { if (!ui.minimized && !ui.closed) ui.set({ minimized: true }) }
         })
         return function () { alive = false; offUi(); offBus() }
       }, [])
@@ -788,11 +934,15 @@ export default {
       if (ui.mode !== 'floating' || ui.closed || !ui.hydrated) return null
       const s = ui.size
 
-      // 拖拽（贴靠状态下按下标题栏 → 解除贴靠回到自由）
+      // 拖拽（贴靠/最大化状态下按下标题栏 → 解除并回到自由）
       function onTitleDown(e) {
         if (e.pointerType === 'mouse' && e.button !== 0) return
         dragStart = { x: e.clientX, y: e.clientY }
-        if (ui.snapEdge) {
+        if (ui.max) {
+          // 最大化被拖动 → 还原到光标下方，本次松手不磁吸
+          ui.set({ max: false, snapEdge: null, snap: null, pos: { x: e.clientX - 30, y: e.clientY - 16 } })
+          suppressSnap = true
+        } else if (ui.snapEdge) {
           // 解除贴靠：面板从按下位置转为自由，本次松手不再磁吸
           ui.set({ snapEdge: null, snap: null, pos: { x: e.clientX - 30, y: e.clientY - 16 } })
           suppressSnap = true
@@ -859,12 +1009,21 @@ export default {
         if (vp) { ui.set({ snap: 'br', pos: { x: Math.max(0, vp.w - s.w - 8), y: Math.max(0, vp.h - s.h - 8) } }) }
         else { ui.set({ snap: 'br', pos: null }) }
       }
-      // 缩放（右下角手柄；贴靠时只调宽度）
+      // 最大化 / 还原（双击标题栏或点按钮）
+      function toggleMax() {
+        ui.set({ max: !ui.max })
+      }
+      // 缩放（右下角手柄；贴靠时只调宽度；最大化时从视口有效尺寸起算）
       function onRsDown(e) {
         if (e.pointerType === 'mouse' && e.button !== 0) return
+        let baseW = s.w, baseH = s.h
+        if (ui.max) {
+          const vp = viewport()
+          if (vp) { baseW = vp.w - 16; baseH = vp.h - 16 }
+        }
         resizeRef = ui.snapEdge
           ? { w: ui.snapW, h: 0, x: e.clientX, y: e.clientY }
-          : { w: s.w, h: s.h, x: e.clientX, y: e.clientY }
+          : { w: baseW, h: baseH, x: e.clientX, y: e.clientY }
         try { e.currentTarget.setPointerCapture(e.pointerId) } catch (err) { /* ignore */ }
       }
       function onRsMove(e) {
@@ -875,7 +1034,7 @@ export default {
         } else {
           const w = Math.min(Math.max(460, resizeRef.w + (e.clientX - resizeRef.x)), 1100)
           const h = Math.min(Math.max(380, resizeRef.h + (e.clientY - resizeRef.y)), 1000)
-          ui.set({ size: { w: w, h: h }, snap: null })
+          ui.set({ size: { w: w, h: h }, snap: null, max: false })
         }
       }
       function onRsUp(e) {
@@ -917,12 +1076,16 @@ export default {
       }
 
       const snapped = ui.snapEdge ? ' xq-snapped xq-narrow' : (ui.snap ? ' xq-snapped' : '')
-      const titleBar = el('div', { className: 'xq-title', ...dragProps }, [
+      const titleBar = el('div', {
+        className: 'xq-title', ...dragProps,
+        onDoubleClick: function (e) { e.stopPropagation(); toggleMax() }
+      }, [
         el('span', { key: 'logo', className: 'xq-logo' }, [el('b', { key: 'b' }, '雪球'), ' mini']),
         el('span', { key: 'st', className: 'xq-status' + (fOpen ? ' xq-live' : '') }, fOpen ? '● 盘中' : '已收盘'),
-        el('span', { key: 'upd', className: 'xq-update' }, ui.snapEdge === 'right' ? '已贴右 · 拖走解除' : ui.snapEdge === 'left' ? '已贴左 · 拖走解除' : '拖到左/右边缘贴靠'),
+        el('span', { key: 'upd', className: 'xq-update' }, ui.max ? '已最大化 · 拖动标题栏还原' : ui.snapEdge === 'right' ? '已贴右 · 拖走解除' : ui.snapEdge === 'left' ? '已贴左 · 拖走解除' : '拖到左/右边缘贴靠 · 双击最大化'),
         el('span', { key: 'sp', className: 'xq-spacer' }),
         el('button', { key: 'snap', className: 'xq-btn-mini', title: '循环：右下角 → 右侧窄栏 → 解除', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); toggleSnap() } }, ui.snapEdge === 'right' ? '◫' : ui.snap === 'br' ? '📌' : '📍'),
+        el('button', { key: 'max', className: 'xq-btn-mini', title: ui.max ? '还原（双击标题栏同效）' : '最大化（双击标题栏同效）', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); toggleMax() } }, ui.max ? '⤡' : '⤢'),
         el('button', { key: 'dock', className: 'xq-btn-mini', title: '嵌入到输入框上方（不遮挡对话）', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); ui.set({ mode: 'docked', minimized: false }) } }, '嵌入'),
         el('button', { key: 'min', className: 'xq-btn-mini', title: '收起', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); ui.set({ minimized: true }) } }, '—'),
         el('button', { key: 'cls', className: 'xq-btn-mini', title: '关闭（点底部指数条重新打开）', onPointerDown: function (e) { e.stopPropagation() }, onClick: function (e) { e.stopPropagation(); ui.set({ closed: true }) } }, '✕')
@@ -941,6 +1104,7 @@ export default {
     }
 
     function posStyle() {
+      if (ui.max) return { left: 8, top: 8, right: 8, bottom: 8, width: 'auto', height: 'auto' }
       if (ui.snapEdge === 'right') return { right: 0, top: 0, bottom: 0, left: 'auto', width: ui.snapW }
       if (ui.snapEdge === 'left') return { left: 0, top: 0, bottom: 0, right: 'auto', width: ui.snapW }
       if (ui.pos) return { left: ui.pos.x, top: ui.pos.y, right: 'auto', bottom: 'auto', width: ui.size.w, height: ui.size.h }
@@ -952,7 +1116,10 @@ export default {
       const [, force] = React.useState(0)
       React.useEffect(function () {
         const off = ui.subscribe(function () { force(function (x) { return x + 1 }) })
-        return off
+        const offBus = bus.on(function (ev) {
+          if (ev === 'esc') { if (!ui.minimized) ui.set({ minimized: true }) }
+        })
+        return function () { off(); offBus() }
       }, [])
       if (ui.mode !== 'docked' || !ui.hydrated) return null
 
@@ -992,11 +1159,6 @@ export default {
         ]),
         el('div', { key: 'rs', className: 'xq-resize xq-resize-w', onPointerDown: onDwDown, onPointerMove: onDwMove, onPointerUp: onDwUp, onPointerCancel: onDwUp })
       ])
-    }
-
-    function posStyle() {
-      if (ui.pos) return { left: ui.pos.x, top: ui.pos.y, right: 'auto', bottom: 'auto', width: ui.size.w, height: ui.size.h }
-      return { width: ui.size.w, height: ui.size.h }
     }
 
     // ---------- 输入框上方入口条（仅悬浮模式下显示） ----------

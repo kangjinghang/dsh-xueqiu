@@ -3,7 +3,7 @@ export default {
   apply(ctx) {
     const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     const BASE = 'https://stock.xueqiu.com'
-    const SITE = 'https://xueqiu.com'
+    const SITE = 'https://www.xueqiu.com'
     const DEFAULT_WATCHLIST = ['SH600519', 'SZ300750', 'SZ002594', 'SH601318', '00700', 'AAPL']
 
     const state = { cookie: '' }
@@ -30,16 +30,20 @@ export default {
       if (state.cookie && !force) return state.cookie
       const shell = getShell()
       if (!shell) return ''
-      const cmd = "curl -s --max-time 12 -D - -o /dev/null 'https://xueqiu.com/' -H 'User-Agent: " + UA + "'"
+      // 雪球主域 302 → www.xueqiu.com，必须 -L 跟随才能拿到 Set-Cookie
+      const cmd = "curl -s -L --max-time 12 -D - -o /dev/null 'https://www.xueqiu.com/' -H 'User-Agent: " + UA + "'"
       const spec = shell.resolve({ command: cmd, timeoutMs: 15000, stdoutMaxBytes: 65536 })
       const res = await shell.run(spec)
       if (res.exitCode !== 0) return ''
+      const seen = {}
       const pairs = []
       const lines = String(res.stdout.text || '').split('\n')
       for (let i = 0; i < lines.length; i++) {
         const m = /^set-cookie:\s*([^=;\s]+)=([^;]*)/i.exec(lines[i].trim())
-        if (m) pairs.push(m[1] + '=' + m[2])
+        if (m && !seen[m[1]]) { seen[m[1]] = true; pairs.push(m[1] + '=' + m[2]) }
       }
+      // kline 端点要求 cookie 里存在 u=<id>（值任意）；无登录态时补一个随机 u
+      if (!seen.u) pairs.push('u=' + String(Date.now()) + String(Math.floor(Math.random() * 1e6)))
       state.cookie = pairs.join('; ')
       return state.cookie
     }
@@ -50,7 +54,7 @@ export default {
       const cookie = await ensureCookie(false)
       let cmd = "curl -s --max-time 12 '" + url + "'"
       cmd += " -H 'User-Agent: " + UA + "'"
-      cmd += " -H 'Referer: https://xueqiu.com/'"
+      cmd += " -H 'Referer: https://www.xueqiu.com/'"
       cmd += " -H 'Accept: application/json'"
       if (cookie) cmd += " -H 'Cookie: " + cookie + "'"
       const spec = shell.resolve({ command: cmd, timeoutMs: 15000, stdoutMaxBytes: 4194304 })

@@ -32,18 +32,38 @@ return {
       }
     }
 
+    // 看门狗：单个请求最长 30s，超时强制释放槽位，防止悬挂请求冻结整条管线
+    const GATE_TIMEOUT_MS = 30000
+
     function gate(fn) {
       return new Promise(function (resolve, reject) {
         waiters.push(async function () {
-          const wait = lastStart + MIN_GAP_MS - Date.now()
-          if (wait > 0) await delay(wait)
-          lastStart = Date.now()
+          let released = false
+          function rel() {
+            if (released) return
+            released = true
+            running--
+            pump()
+          }
+          let settled = false
+          let watchdog = null
+          function settle(fnName, arg) {
+            if (settled) return
+            settled = true
+            if (watchdog) { try { watchdog() } catch (e) { /* ignore */ } }
+            if (fnName === 'resolve') resolve(arg)
+            else reject(arg)
+          }
+          try { watchdog = ctx.timeout(function () { rel(); settle('reject', new Error('[timeout] 请求超时(' + GATE_TIMEOUT_MS + 'ms)，已释放调度槽')) }, GATE_TIMEOUT_MS) } catch (e) { /* ignore */ }
           try {
-            resolve(await fn())
+            const wait = lastStart + MIN_GAP_MS - Date.now()
+            if (wait > 0) await delay(wait)
+            lastStart = Date.now()
+            settle('resolve', await fn())
           } catch (e) {
-            reject(e)
+            settle('reject', e)
           } finally {
-            release()
+            rel()
           }
         })
         pump()
@@ -490,7 +510,7 @@ return {
       return {
         tab: s.tab || 'market', open: s.open !== false,
         dockH: (s.dockH !== undefined && isFinite(hNum) && hNum >= 160 && hNum <= 1200) ? hNum : null,
-        badgePos: (s.badgePos && isFinite(Number(s.badgePos.x)) && isFinite(Number(s.badgePos.y())))
+        badgePos: (s.badgePos && isFinite(Number(s.badgePos.x)) && isFinite(Number(s.badgePos.y)))
           ? { x: Number(s.badgePos.x), y: Number(s.badgePos.y) } : null
       }
     }
@@ -516,7 +536,10 @@ return {
       hot: actHot, search: actSearch, searchPosts: actSearchPosts, news: actNews,
       kol: actKOL, user: actUser, finance: actFinance,
       'watchlist.get': actWatchlistGet, 'watchlist.add': actWatchlistAdd, 'watchlist.remove': actWatchlistRemove,
-      'ui.get': actUiGet, 'ui.set': actUiSet
+      'ui.get': actUiGet, 'ui.set': actUiSet,
+      debug: async function () {
+        return { running: running, waiters: waiters.length, inflight: Array.from(inflight.keys()), cacheKeys: cache.size, cookie: state.cookie ? 'set' : 'none' }
+      }
     }
 
     ctx.effect(function () {

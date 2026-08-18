@@ -589,7 +589,7 @@ return {
       ].map(function (t) {
         return el('button', {
           key: t[0], className: 'xq-tab' + (tab === t[0] ? ' xq-tab-active' : ''),
-          onClick: function () { setTab(t[0]) }
+          onClick: function () { setTab(t[0]); if (view) setView(null) }
         }, t[1])
       }).concat([
         el('span', { key: 'sp', className: 'xq-spacer' }),

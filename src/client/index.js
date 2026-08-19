@@ -60,6 +60,17 @@ exports.default = {
       '.xq-up{color:var(--dsw-alias-state-error-primary);}\n' +
       '.xq-down{color:var(--dsw-alias-state-success-primary);}\n' +
       '.xq-flat{color:var(--dsw-alias-label-secondary);}\n' +
+      // 专业感三件套：①等宽数字 ②涨跌幅色块 ③价格闪烁
+      '.xq-dock,.xq-badge,.xq-ticker{font-variant-numeric:tabular-nums;}\n' +
+      '.xq-pct-chip{display:inline-block;min-width:52px;text-align:center;padding:1px 6px;border-radius:5px;font-size:11.5px;font-weight:600;}\n' +
+      '.xq-pct-chip.xq-up{background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent);}\n' +
+      '.xq-pct-chip.xq-down{background:color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent);}\n' +
+      '.xq-pct-chip.xq-flat{background:var(--dsw-alias-bg-layer-2);}\n' +
+      '.xq-idx-pct.xq-pct-chip{min-width:46px;padding:0 5px;font-size:10.5px;}\n' +
+      '@keyframes xq-flash-up{0%{background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 18%, transparent);}100%{background:transparent;}}\n' +
+      '@keyframes xq-flash-down{0%{background:color-mix(in srgb, var(--dsw-alias-state-success-primary) 18%, transparent);}100%{background:transparent;}}\n' +
+      '.xq-flash-up{animation:xq-flash-up .8s ease-out;}\n' +
+      '.xq-flash-down{animation:xq-flash-down .8s ease-out;}\n' +
       '.xq-grid{display:grid;gap:0;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;overflow:hidden;margin-bottom:8px;}\n' +
       '.xq-grid-hd,.xq-grid-row{display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr 84px;align-items:center;}\n' +
       '.xq-grid-hd{font-size:11px;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-2);padding:5px 8px;}\n' +
@@ -478,6 +489,9 @@ exports.default = {
     function XueqiuPanel() {
       const [watchlist, setWatchlist] = React.useState([])
       const [quotes, setQuotes] = React.useState([])
+      // 价格闪烁：记录上一价与变化方向（symbol -> 1|-1），行渲染时挂一次性动画类
+      const prevPrices = React.useRef({})
+      const [flashDir, setFlashDir] = React.useState({})
       const [indices, setIndices] = React.useState([])
       const [hot, setHot] = React.useState([])
       const [hotMarket, setHotMarket] = React.useState('cn')
@@ -514,7 +528,15 @@ exports.default = {
           setErr('')
           if (!wl.length) return
           return call('quote', { symbols: wl }).then(function (data) {
-            setQuotes((data && data.list) || [])
+            const list = (data && data.list) || []
+            const dirs = {}
+            list.forEach(function (q) {
+              const prev = prevPrices.current[q.symbol]
+              if (prev !== undefined && q.current !== prev) dirs[q.symbol] = q.current > prev ? 1 : -1
+              prevPrices.current[q.symbol] = q.current
+            })
+            if (Object.keys(dirs).length) setFlashDir(dirs)
+            setQuotes(list)
           })
         }).catch(function (e) {
           setErr(String((e && e.message) || e))
@@ -708,7 +730,7 @@ exports.default = {
             el('div', { key: 'n', className: 'xq-idx-name' }, q.name),
             el('div', { key: 'r', className: 'xq-idx-row' }, [
               el('span', { key: 'c', className: 'xq-idx-cur ' + colorOf(q.percent) }, fmt(q.current)),
-              el('span', { key: 'p', className: 'xq-idx-pct ' + colorOf(q.percent) }, fmtPct(q.percent))
+              el('span', { key: 'p', className: 'xq-idx-pct xq-pct-chip ' + colorOf(q.percent) }, fmtPct(q.percent))
             ])
           ])
         })
@@ -718,8 +740,8 @@ exports.default = {
               el('div', { key: 'a', className: 'xq-name' }, q.name),
               el('div', { key: 'b', className: 'xq-sub' }, q.symbol)
             ]),
-            el('div', { key: 'c', className: colorOf(q.percent) }, fmt(q.current)),
-            el('div', { key: 'p', className: colorOf(q.percent) }, fmtPct(q.percent)),
+            el('div', { key: 'c', className: colorOf(q.percent) + (flashDir[q.symbol] === 1 ? ' xq-flash-up' : flashDir[q.symbol] === -1 ? ' xq-flash-down' : '') }, fmt(q.current)),
+            el('div', { key: 'p' }, el('span', { key: 'pp', className: 'xq-pct-chip ' + colorOf(q.percent) }, fmtPct(q.percent))),
             el('div', { key: 'v', className: 'xq-sub' }, fmtVol(q.volume)),
             el('div', { key: 'a2', className: 'xq-actions' }, [
               el('button', { key: 'd', className: 'xq-btn-mini', onClick: function (e) { e.stopPropagation(); openDetail(q.symbol) } }, '详情'),

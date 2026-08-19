@@ -1,6 +1,6 @@
 # dsh-xueqiu · Xueqiu Mini Market Panel
 
-> A Xueqiu (Snowball) market panel for DeepSeek Harness: **no login required** — live A-share/HK/US quotes, candlestick & minute charts, hot lists, search, 7×24 news and trending KOLs. The panel docks above the composer without covering the conversation; a draggable mini badge keeps live indices always visible.
+> A Xueqiu (Snowball) market panel for DeepSeek Harness: **no login required** — live A-share/HK/US quotes, candlestick & minute charts, hot lists, search, 7×24 news and trending KOLs. The panel docks above the composer without covering the conversation; a draggable always-on market region shows the four major indices plus your top-12 watchlist quotes.
 
 [![npm version](https://img.shields.io/npm/v/dsh-xueqiu?style=flat-square&label=npm)](https://www.npmjs.com/package/dsh-xueqiu)
 [![npm downloads](https://img.shields.io/npm/dm/dsh-xueqiu?style=flat-square)](https://www.npmjs.com/package/dsh-xueqiu)
@@ -25,7 +25,7 @@
 | 👥 Trending KOLs | Per-stock hot users (followers / verified badge) |
 | 💼 Watchlist | Persisted locally, add/remove in one click |
 | 🧲 Docked panel | Full panel docks **above the composer** (official `conversation.input.dock` slot), flows with layout, **never covers messages** |
-| 🏷️ Mini badge | Floating badge with live SH/SZ indices; click toggles the panel, drag to reposition (position remembered) |
+| 🏷️ Market region | Floating region: header row + four indices (SSE/SZSE/ChiNext/STAR50) in two columns + top-12 watchlist quotes in a two-column grid; click toggles the panel, drag to reposition, ⤡ grip resizes width 120–480px (double-click resets 320px), width & position persisted |
 | 📏 Resizable | Drag the bottom handle (160px–85% viewport, double-click resets); height persisted |
 | ⌨️ Esc collapse | Esc closes detail first, then the panel; reopen via badge or ticker bar |
 | 🛡️ Request guard | Concurrency 2 + 100ms min gap; **30s watchdog** force-releases hung slots; cookie risk-control auto reseed & retry; rate-limit backoff; **auto-pauses all polling while the tab is hidden** |
@@ -46,7 +46,7 @@ All data comes from Xueqiu public web endpoints (anonymous cookie seeded by visi
 
 ![Detail](https://raw.githubusercontent.com/wanderer-yk/dsh-xueqiu/main/assets/detail.png)
 
-**Mini badge** — always-on live indices, click to toggle, draggable:
+**Mini market region** — four indices + 12 watchlist quotes in two columns, ⤡ grip resizes width, click to toggle, draggable:
 
 ![Badge](https://raw.githubusercontent.com/wanderer-yk/dsh-xueqiu/main/assets/badge.png)
 

@@ -719,6 +719,7 @@ return {
       return {
         tab: s.tab || 'market', open: s.open !== false,
         dockH: (s.dockH !== undefined && isFinite(hNum) && hNum >= 160 && hNum <= 1200) ? hNum : null,
+        badgeW: (s.badgeW !== undefined && isFinite(Number(s.badgeW)) && Number(s.badgeW) >= 120 && Number(s.badgeW) <= 480) ? Number(s.badgeW) : null,
         badgePos: (s.badgePos && isFinite(Number(s.badgePos.x)) && isFinite(Number(s.badgePos.y)))
           ? { x: Number(s.badgePos.x), y: Number(s.badgePos.y) } : null
       }
@@ -734,6 +735,10 @@ return {
       if (args.dockH !== undefined) {
         const dh = Number(args.dockH)
         if (isFinite(dh)) s.dockH = Math.min(Math.max(dh, 160), 1200)
+      }
+      if (args.badgeW !== undefined) {
+        const bw = Number(args.badgeW)
+        if (isFinite(bw)) s.badgeW = Math.min(Math.max(bw, 120), 480)
       }
       await saveUiState()
       return { ok: true }

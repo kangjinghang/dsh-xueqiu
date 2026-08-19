@@ -8,7 +8,7 @@ return {
       '.xq-dock-body{height:52vh;max-height:80vh;overflow-y:auto;padding:8px 12px 10px;}\n' +
       '.xq-dock-resize{display:flex;align-items:center;justify-content:center;height:12px;cursor:ns-resize;user-select:none;border-top:1px solid var(--dsw-alias-border-l1);}\n' +
       '.xq-dock-resize span{display:block;width:36px;height:3px;border-radius:2px;background:var(--dsw-alias-border-l2);}\n' +
-      '.xq-badge{position:fixed;right:16px;bottom:64px;display:flex;align-items:center;gap:8px;padding:5px 12px;border-radius:999px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);box-shadow:0 6px 24px rgba(0,0,0,.25);font-size:11.5px;line-height:1.4;color:var(--dsw-alias-label-primary);cursor:grab;user-select:none;pointer-events:auto;z-index:1200;}\n' +
+      '.xq-badge{position:fixed;right:16px;bottom:64px;display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;padding:6px 12px;border-radius:14px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);box-shadow:0 6px 24px rgba(0,0,0,.25);font-size:11.5px;line-height:1.4;color:var(--dsw-alias-label-primary);cursor:grab;user-select:none;pointer-events:auto;z-index:1200;}\n' +
       '.xq-badge:active{cursor:grabbing;}\n' +
       '.xq-badge b{color:var(--dsw-alias-brand-primary);}\n' +
       '.xq-badge-val{font-weight:700;}\n' +
@@ -65,16 +65,10 @@ return {
       '.xq-news-group::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--dsw-alias-border-l2);margin-left:-13px;flex:none;}\n' +
       '.xq-news-item{position:relative;}\n' +
       // 徽章 hover 预览弹层
-      // 徽章 hover 预览弹层（可滚动 + 搜索过滤，承载 100+ 自选）
-      '.xq-badge-pop{position:fixed;z-index:1201;width:280px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.28);padding:8px 10px;font-size:12px;display:flex;flex-direction:column;}\n' +
-      '.xq-badge-pop-list{max-height:min(46vh,340px);overflow-y:auto;overscroll-behavior:contain;}\n' +
-      '.xq-bp-search{width:100%;box-sizing:border-box;margin:4px 0 6px;padding:4px 8px;border-radius:6px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-size:12px;outline:none;}\n' +
-      '.xq-bp-search:focus{border-color:var(--dsw-alias-brand-primary);}\n' +
-      '.xq-badge-pop-hd{font-size:10.5px;color:var(--dsw-alias-label-secondary);margin-bottom:5px;display:flex;justify-content:space-between;}\n' +
-      '.xq-bp-row{display:flex;align-items:center;gap:8px;padding:2.5px 0;cursor:pointer;border-radius:5px;}\n' +
-      '.xq-bp-row:hover{background:var(--dsw-alias-bg-layer-2);}\n' +
-      '.xq-bp-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}\n' +
-      '.xq-bp-val{font-weight:600;}\n' +
+      // 徽章区域模式：右下角宽度调节手柄（⤡），拖动横向改变宽度
+      '.xq-badge-grip{position:absolute;right:0;bottom:0;width:14px;height:14px;cursor:ew-resize;display:flex;align-items:flex-end;justify-content:flex-end;color:var(--dsw-alias-label-secondary);font-size:9px;line-height:1;opacity:0;transition:opacity .15s;}\n' +
+      '.xq-badge:hover .xq-badge-grip{opacity:.85;}\n' +
+      '.xq-witem{white-space:nowrap;}\n' +
       '.xq-grid{display:grid;gap:0;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;overflow:hidden;margin-bottom:8px;}\n' +
       '.xq-grid-hd,.xq-grid-row{display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr 84px;align-items:center;}\n' +
       '.xq-grid-hd{font-size:11px;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-2);padding:5px 8px;}\n' +
@@ -255,7 +249,7 @@ return {
 
     // ---------- 共享 UI 状态：面板开合 / 当前标签 / 徽章位置 ----------
     const ui = {
-      open: false, tab: 'market', badgePos: null, dockH: null, hydrated: false,
+      open: false, tab: 'market', badgePos: null, badgeW: null, dockH: null, hydrated: false,
       _fns: [],
       subscribe: function (fn) {
         this._fns.push(fn)
@@ -279,7 +273,7 @@ return {
     }
 
     const saveUi = ctx.debounce(function () {
-      call('ui.set', { tab: ui.tab, open: ui.open, badgePos: ui.badgePos, dockH: ui.dockH }).catch(function () { /* 忽略 */ })
+      call('ui.set', { tab: ui.tab, open: ui.open, badgePos: ui.badgePos, badgeW: ui.badgeW, dockH: ui.dockH }).catch(function () { /* 忽略 */ })
     }, 800)
 
     // 徽章拖拽引用（实例唯一）
@@ -1129,6 +1123,9 @@ return {
           if (d && typeof d.dockH === 'number' && isFinite(d.dockH)) {
             ui.set({ dockH: d.dockH })
           }
+          if (d && typeof d.badgeW === 'number' && isFinite(d.badgeW)) {
+            ui.set({ badgeW: d.badgeW })
+          }
           ui.set({ hydrated: true })
         }).catch(function () { ui.set({ hydrated: true }) })
         const off = ui.subscribe(function () { force(function (x) { return x + 1 }) })
@@ -1210,55 +1207,17 @@ return {
       ])
     }
 
-    // ---------- 迷你悬浮徽章（shell.overlay）：可拖动，点击开合面板 ----------
+    // ---------- 迷你悬浮徽章（shell.overlay）：可拖动、右下角手柄调宽度 ----------
+    // 形态 C：默认单行轮动条（每 8s 翻 2 只）；拖宽后变静态平铺区域（前 12 只换行铺开，无轮动）。
+    // 悬停弹层已砍掉：速览靠拉宽徽章，完整功能点徽章开面板。
     function MiniBadge() {
       const [idx, setIdx] = React.useState([])
-      // 徽章主体行情：自选股轮动（前 12 只，每页 2 只，8s 换页）；自选为空回退指数（上证+深成指）
       const [top, setTop] = React.useState([])
       const [page, setPage] = React.useState(0)
       const [mOpen, setMOpen] = React.useState(true)
-      // 轮动定时器：悬停弹层/拖拽时暂停，页面隐藏时暂停
+      const [, force] = React.useState(0)
       const rotateRef = React.useRef(null)
       const pausedRef = React.useRef(false)
-      const [, force] = React.useState(0)
-      // hover 预览：延迟出现，拖拽/点击不误触；数据 30s 内复用；可搜索过滤（100+ 自选）
-      const [pop, setPop] = React.useState(null)   // { quotes: [], at: ts }
-      const [query, setQuery] = React.useState('')
-      const hoverTimer = React.useRef(null)
-      const popCache = React.useRef({ at: 0, list: [] })
-
-      function loadPop() {
-        const now = Date.now()
-        if (now - popCache.current.at < 30000 && popCache.current.list.length) {
-          setPop({ quotes: popCache.current.list, at: popCache.current.at })
-          return
-        }
-        // 两次 RPC（watchlist + quotes），走既有节流管线
-        call('watchlist.get', {}).then(function (wl) {
-          const symbols = (wl && wl.symbols) || []
-          if (!symbols.length) { setPop({ quotes: [], at: now }); return }
-          return call('quote', { symbols: symbols }).then(function (data) {
-            const list = (data && data.list) || []
-            popCache.current = { at: now, list: list }
-            setPop({ quotes: list, at: now })
-          })
-        }).catch(function () { /* 静默 */ })
-      }
-      function onEnter() {
-        pausedRef.current = true   // 悬停暂停轮动
-        if (hoverTimer.current) return
-        hoverTimer.current = setTimeout(function () {
-          hoverTimer.current = null
-          if (!badgeDrag) { loadPop() }
-        }, 300)
-      }
-      function onLeave() {
-        if (hoverTimer.current) { clearTimeout(hoverTimer.current); hoverTimer.current = null }
-        pausedRef.current = false
-        setPop(null)
-        setQuery('')
-      }
-      React.useEffect(function () { return function () { if (hoverTimer.current) clearTimeout(hoverTimer.current); if (rotateRef.current) clearInterval(rotateRef.current) } }, [])
 
       React.useEffect(function () {
         let alive = true
@@ -1270,7 +1229,7 @@ return {
             const st = data ? data.status : null
             setMOpen(st === 5 || st === 6)
           }).catch(function () { /* 静默失败 */ })
-          // 徽章主体：自选股前 12 只（轮动素材，每页 2 只）；自选为空时主体回退指数
+          // 徽章主体：自选前 12 只（轮动素材 / 平铺内容）；自选为空回退指数
           call('watchlist.get', {}).then(function (wl) {
             if (!alive) return
             const symbols = ((wl && wl.symbols) || []).slice(0, 12)
@@ -1283,7 +1242,7 @@ return {
         function onVis() { if (!pageHidden()) refresh() }
         refresh()
         const stop = ctx.interval(refresh, 30000)
-        // 自选轮动：每 8s 翻一页（悬停/拖拽/页面隐藏时暂停；自选不足 3 只不轮）
+        // 自选轮动：每 8s 翻一页（拖拽/页面隐藏时暂停；仅单行模式生效）
         rotateRef.current = setInterval(function () {
           if (pausedRef.current || pageHidden()) return
           setPage(function (p) { return p + 1 })
@@ -1323,12 +1282,11 @@ return {
         y = Math.min(Math.max(4, y), (vp ? vp.h : 800) - h - 4)
         badgeDrag.x = x + w / 2
         badgeDrag.y = y + h / 2
-        // 拖动期间直改 DOM，松手才提交状态（避免逐帧全订阅重渲染）
+        badgeDrag.pos = { x: x, y: y }
         e.currentTarget.style.left = x + 'px'
         e.currentTarget.style.top = y + 'px'
         e.currentTarget.style.right = 'auto'
         e.currentTarget.style.bottom = 'auto'
-        badgeDrag.pos = { x: x, y: y }
       }
       function onUp(e) {
         const moved = badgeMoved
@@ -1341,15 +1299,49 @@ return {
         if (pos) ui.set({ badgePos: pos })   // 松手一次性提交
       }
 
+      // ---- 宽度调节手柄：横向拖动改变徽章宽度（120–480px），松手持久化；双击复位为单行条 ----
+      const gripDrag = React.useRef(null)
+      function onGripDown(e) {
+        if (e.pointerType === 'mouse' && e.button !== 0) return
+        e.stopPropagation()   // 不触发徽章移动
+        try { e.currentTarget.setPointerCapture(e.pointerId) } catch (err) { /* ignore */ }
+        const base = ui.badgeW || (e.currentTarget.parentElement ? e.currentTarget.parentElement.offsetWidth : 200)
+        gripDrag.current = { startX: e.clientX, baseW: base }
+      }
+      function onGripMove(e) {
+        if (!gripDrag.current) return
+        e.stopPropagation()
+        const vp = viewport()
+        const maxW = Math.min(480, (vp ? vp.w : 1200) - 24)
+        const w = Math.min(Math.max(120, gripDrag.current.baseW + (e.clientX - gripDrag.current.startX)), maxW)
+        ui.set({ badgeW: w })   // 拖动过程实时反馈（内存态，松手才落盘）
+      }
+      function onGripUp(e) {
+        if (!gripDrag.current) return
+        e.stopPropagation()
+        gripDrag.current = null
+        try { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId) } catch (err) { /* ignore */ }
+        saveUi()   // 落盘（debounce）
+      }
+      function onGripDblClick(e) {
+        e.stopPropagation()
+        ui.set({ badgeW: null })   // 复位为自然宽度单行条
+        saveUi()
+      }
+
       const sh = idx[0], sz = idx[1]
-      // 徽章主体行情项：自选轮动页（页码指示）；无自选回退 上证（价+幅）/深成指（幅）
+      const wide = ui.badgeW !== null && ui.badgeW !== undefined   // 区域模式（静态平铺）
+      // 区域模式：前 12 只全部平铺（换行）；单行模式：轮动页（页码指示）
+      function wItem(q) {
+        return el('span', { key: 'w-' + q.symbol, className: 'xq-witem', title: (q.name || q.symbol) + ' ' + fmt(q.current) + (q.percent !== undefined ? '  ' + fmtPct(q.percent) : '') }, [
+          el('span', { key: 'n', className: 'xq-badge-hint' }, (q.name || q.symbol) + ' '),
+          el('span', { key: 'p', className: 'xq-badge-val ' + colorOf(q.percent) }, fmtPct(q.percent))
+        ])
+      }
       const bodyEls = top.length
-        ? pageQuotes.map(function (q) {
-            return el('span', { key: 'w-' + q.symbol, title: (q.name || q.symbol) + ' ' + fmt(q.current) }, [
-              el('span', { key: 'n', className: 'xq-badge-hint' }, (q.name || q.symbol) + ' '),
-              el('span', { key: 'p', className: 'xq-badge-val ' + colorOf(q.percent) }, fmtPct(q.percent))
-            ])
-          }).concat(pages > 1 ? [el('span', { key: 'pg', className: 'xq-badge-hint' }, ' ·' + (pageIdx + 1) + '/' + pages + '· ')] : [])
+        ? (wide
+            ? top.map(wItem)
+            : pageQuotes.map(wItem).concat(pages > 1 ? [el('span', { key: 'pg', className: 'xq-badge-hint' }, ' ·' + (pageIdx + 1) + '/' + pages + '· ')] : []))
         : [
             sh ? el('span', { key: 'sh' }, [
               el('span', { key: 'n', className: 'xq-badge-hint' }, sh.name + ' '),
@@ -1364,64 +1356,29 @@ return {
       const style = ui.badgePos
         ? { left: ui.badgePos.x, top: ui.badgePos.y, right: 'auto', bottom: 'auto' }
         : null
-      // hover 预览弹层：跟随徽章位置（有拖拽坐标用之，否则用默认右下角），显示在徽章上方
-      let popStyle = null
-      if (ui.badgePos) {
-        popStyle = { left: Math.max(6, ui.badgePos.x - 60), top: Math.max(6, ui.badgePos.y - 210), right: 'auto', bottom: 'auto' }
-      } else {
-        popStyle = { right: 16, bottom: 104, left: 'auto', top: 'auto' }
-      }
-      let popEl = null
-      if (pop) {
-        // 搜索过滤（名称/代码，不区分大小写）；全部展示，列表内滚动
-        const q = query.trim().toLowerCase()
-        const filtered = q
-          ? pop.quotes.filter(function (x) {
-              return (x.name || '').toLowerCase().indexOf(q) !== -1 || (x.symbol || '').toLowerCase().indexOf(q) !== -1
-            })
-          : pop.quotes
-        const rows = filtered.map(function (x) {
-          return el('div', {
-            key: x.symbol, className: 'xq-bp-row', title: '点击查看详情',
-            onClick: function (e) { e.stopPropagation(); setPop(null); ui.set({ open: true }) }
-          }, [
-            el('span', { key: 'n', className: 'xq-bp-name' }, x.name || x.symbol),
-            el('span', { key: 'v', className: 'xq-bp-val ' + colorOf(x.percent) }, fmt(x.current)),
-            el('span', { key: 'p', className: 'xq-pct-chip ' + colorOf(x.percent) }, fmtPct(x.percent))
-          ])
-        })
-        popEl = el('div', { key: 'pop', className: 'xq-badge-pop', style: popStyle, onMouseEnter: onEnter, onMouseLeave: onLeave }, [
-          el('div', { key: 'hd', className: 'xq-badge-pop-hd' }, [
-            el('span', { key: 't' }, '自选 · ' + filtered.length + (q ? '/' + pop.quotes.length : '') + ' 只'),
-            el('span', { key: 'h' }, '点击展开面板')
-          ]),
-          pop.quotes.length > 8
-            ? el('input', {
-                key: 'search', className: 'xq-bp-search', type: 'text', value: query,
-                placeholder: '搜索名称 / 代码…',
-                onClick: function (e) { e.stopPropagation() },
-                onChange: function (e) { setQuery(e.target.value) }
-              })
-            : null,
-          el('div', { key: 'list', className: 'xq-badge-pop-list' },
-            rows.length ? rows : el('div', { key: 'e', className: 'xq-muted' }, q ? '无匹配' : '自选为空'))
-        ])
+      if (wide) {
+        ;(style = style || {})
+        style.maxWidth = ui.badgeW + 'px'
+        style.width = ui.badgeW + 'px'
       }
 
       const badgeEl = el('div', {
         className: 'xq-badge',
         style: style,
-        title: '点击开合行情面板 · 拖动调整位置 · 悬停速览自选',
-        onPointerDown: onDown, onPointerMove: onMove, onPointerUp: onUp, onPointerCancel: onUp,
-        onMouseEnter: onEnter, onMouseLeave: onLeave
+        title: '点击开合行情面板 · 拖动调整位置 · 右下角 ⤡ 调宽度（双击复位）',
+        onPointerDown: onDown, onPointerMove: onMove, onPointerUp: onUp, onPointerCancel: onUp
       }, [
         el('span', { key: 'logo' }, [el('b', { key: 'b' }, '雪球'), 'mini']),
         el('span', { key: 'st', className: 'xq-status' + (aSession() === '盘中' ? ' xq-live' : ''), title: sessionsText() }, (function () { var s = aSession(); return s === '盘中' ? '● 盘中' : (s || (mOpen ? '● 盘中' : '休市')) })()),
       ].concat(bodyEls).concat([
-        el('span', { key: 'ct', className: 'xq-caret' }, ui.open ? '▾' : '▴')
+        el('span', { key: 'ct', className: 'xq-caret' }, ui.open ? '▾' : '▴'),
+        el('span', {
+          key: 'grip', className: 'xq-badge-grip', title: '拖动调宽度 · 双击复位单行',
+          onPointerDown: onGripDown, onPointerMove: onGripMove, onPointerUp: onGripUp, onPointerCancel: onGripUp,
+          onDoubleClick: onGripDblClick
+        }, '⤡')
       ]))
-      // 徽章 + 弹层同层渲染（都为 fixed 定位，互不嵌套，拖拽事件不穿透到弹层）
-      return el('div', { style: { contents: 'display' } }, popEl ? [badgeEl, popEl] : [badgeEl])
+      return el('div', { style: { contents: 'display' } }, [badgeEl])
     }
 
     // ---------- 底部指数条（会话页，输入框下方氛围行） ----------

@@ -1,0 +1,27 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  static-install-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dsh CLI
+        run: npm i -g @deepseek-ai/dsh
+      - name: Source sync + syntax gates
+        run: |
+          python3 scripts/gen-static.py --check
+          node --check src/index.js
+          node --check src/client/index.js
+      - name: Static install smoke (real user path)
+        run: bash scripts/static-smoke.sh
+        env:
+          SMOKE_PORT: 3199

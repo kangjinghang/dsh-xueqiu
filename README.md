@@ -151,6 +151,8 @@ dsh-xueqiu/
 
 ## 📋 更新日志
 
+- **1.7.2**（2025-08-19）
+  - 新增：快讯 tab 翻页——滚动到底或点「加载更早」自动加载历史快讯（max_id 游标，自动去重），「刷新」重置回最新一页。
 - **1.7.1**（2025-08-19）
   - 修复：`dsh plugin add` 静态安装后 `dsh web` 启动即崩（`harness is not defined`）——静态安装改走 `webServer` 前缀路由 `/xq-rpc`（带回环 + 同源双重栅栏），动态运行时仍走 `harness.handle`，双模式自动切换。
   - 修复：静态安装的浏览器端 bundle 格式（`__ModuleLoader__` CJS 工厂）与网络通道（同源 fetch 替代 `host.call`），面板/徽章/指数条在静态模式下完整可用。

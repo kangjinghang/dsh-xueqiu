@@ -375,7 +375,10 @@ export default {
 
     async function actNews(args) {
       const count = Math.min(Math.max(parseInt(args.count, 10) || 20, 1), 50)
-      const data = await getJSON('/statuses/livenews/list.json', { since_id: -1, max_id: -1, count: count }, { base: SITE, ttl: 120000 })
+      // max_id 翻页游标：-1 取最新一页；传上一页最旧一条 id 继续往回翻
+      const maxId = parseInt(args.max_id, 10)
+      const cursor = isFinite(maxId) && maxId > 0 ? maxId : -1
+      const data = await getJSON('/statuses/livenews/list.json', { since_id: -1, max_id: cursor, count: count }, { base: SITE, ttl: 120000 })
       const items = (data && data.items) || []
       return {
         items: items.map(function (it) {

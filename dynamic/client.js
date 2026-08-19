@@ -65,7 +65,11 @@ return {
       '.xq-news-group::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--dsw-alias-border-l2);margin-left:-13px;flex:none;}\n' +
       '.xq-news-item{position:relative;}\n' +
       // 徽章 hover 预览弹层
-      '.xq-badge-pop{position:fixed;z-index:1201;min-width:210px;max-width:280px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.28);padding:8px 10px;font-size:12px;}\n' +
+      // 徽章 hover 预览弹层（可滚动 + 搜索过滤，承载 100+ 自选）
+      '.xq-badge-pop{position:fixed;z-index:1201;width:280px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.28);padding:8px 10px;font-size:12px;display:flex;flex-direction:column;}\n' +
+      '.xq-badge-pop-list{max-height:min(46vh,340px);overflow-y:auto;overscroll-behavior:contain;}\n' +
+      '.xq-bp-search{width:100%;box-sizing:border-box;margin:4px 0 6px;padding:4px 8px;border-radius:6px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-size:12px;outline:none;}\n' +
+      '.xq-bp-search:focus{border-color:var(--dsw-alias-brand-primary);}\n' +
       '.xq-badge-pop-hd{font-size:10.5px;color:var(--dsw-alias-label-secondary);margin-bottom:5px;display:flex;justify-content:space-between;}\n' +
       '.xq-bp-row{display:flex;align-items:center;gap:8px;padding:2.5px 0;cursor:pointer;border-radius:5px;}\n' +
       '.xq-bp-row:hover{background:var(--dsw-alias-bg-layer-2);}\n' +
@@ -1209,12 +1213,17 @@ return {
     // ---------- 迷你悬浮徽章（shell.overlay）：可拖动，点击开合面板 ----------
     function MiniBadge() {
       const [idx, setIdx] = React.useState([])
-      // 徽章主体行情：优先自选股前 2 只；自选为空回退指数（上证+深成指）
+      // 徽章主体行情：自选股轮动（前 12 只，每页 2 只，8s 换页）；自选为空回退指数（上证+深成指）
       const [top, setTop] = React.useState([])
+      const [page, setPage] = React.useState(0)
       const [mOpen, setMOpen] = React.useState(true)
+      // 轮动定时器：悬停弹层/拖拽时暂停，页面隐藏时暂停
+      const rotateRef = React.useRef(null)
+      const pausedRef = React.useRef(false)
       const [, force] = React.useState(0)
-      // hover 预览：延迟出现，拖拽/点击不误触；数据 30s 内复用
+      // hover 预览：延迟出现，拖拽/点击不误触；数据 30s 内复用；可搜索过滤（100+ 自选）
       const [pop, setPop] = React.useState(null)   // { quotes: [], at: ts }
+      const [query, setQuery] = React.useState('')
       const hoverTimer = React.useRef(null)
       const popCache = React.useRef({ at: 0, list: [] })
 
@@ -1236,17 +1245,20 @@ return {
         }).catch(function () { /* 静默 */ })
       }
       function onEnter() {
+        pausedRef.current = true   // 悬停暂停轮动
         if (hoverTimer.current) return
         hoverTimer.current = setTimeout(function () {
           hoverTimer.current = null
-          if (!badgeDrag) loadPop()
+          if (!badgeDrag) { loadPop() }
         }, 300)
       }
       function onLeave() {
         if (hoverTimer.current) { clearTimeout(hoverTimer.current); hoverTimer.current = null }
+        pausedRef.current = false
         setPop(null)
+        setQuery('')
       }
-      React.useEffect(function () { return function () { if (hoverTimer.current) clearTimeout(hoverTimer.current) } }, [])
+      React.useEffect(function () { return function () { if (hoverTimer.current) clearTimeout(hoverTimer.current); if (rotateRef.current) clearInterval(rotateRef.current) } }, [])
 
       React.useEffect(function () {
         let alive = true
@@ -1258,10 +1270,10 @@ return {
             const st = data ? data.status : null
             setMOpen(st === 5 || st === 6)
           }).catch(function () { /* 静默失败 */ })
-          // 徽章主体：自选股前 2 只实时价（自选为空时主体回退指数）
+          // 徽章主体：自选股前 12 只（轮动素材，每页 2 只）；自选为空时主体回退指数
           call('watchlist.get', {}).then(function (wl) {
             if (!alive) return
-            const symbols = ((wl && wl.symbols) || []).slice(0, 2)
+            const symbols = ((wl && wl.symbols) || []).slice(0, 12)
             if (!symbols.length) { setTop([]); return }
             return call('quote', { symbols: symbols }).then(function (data) {
               if (alive) setTop((data && data.list) || [])
@@ -1271,6 +1283,11 @@ return {
         function onVis() { if (!pageHidden()) refresh() }
         refresh()
         const stop = ctx.interval(refresh, 30000)
+        // 自选轮动：每 8s 翻一页（悬停/拖拽/页面隐藏时暂停；自选不足 3 只不轮）
+        rotateRef.current = setInterval(function () {
+          if (pausedRef.current || pageHidden()) return
+          setPage(function (p) { return p + 1 })
+        }, 8000)
         const off = ui.subscribe(function () { force(function (x) { return x + 1 }) })
         try { document.addEventListener('visibilitychange', onVis) } catch (e) { /* ignore */ }
         return function () {
@@ -1279,8 +1296,15 @@ return {
         }
       }, [])
 
+      // 自选页：每页 2 只，page 超界自动回绕
+      const ROTATE_PAGE_SIZE = 2
+      const pages = Math.ceil(top.length / ROTATE_PAGE_SIZE)
+      const pageIdx = pages ? (page % pages) : 0
+      const pageQuotes = top.slice(pageIdx * ROTATE_PAGE_SIZE, pageIdx * ROTATE_PAGE_SIZE + ROTATE_PAGE_SIZE)
+
       function onDown(e) {
         if (e.pointerType === 'mouse' && e.button !== 0) return
+        pausedRef.current = true   // 拖拽期间暂停轮动
         badgeDrag = { x: e.clientX, y: e.clientY }
         badgeMoved = false
         try { e.currentTarget.setPointerCapture(e.pointerId) } catch (err) { /* ignore */ }
@@ -1313,18 +1337,19 @@ return {
         badgeMoved = false
         try { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId) } catch (err) { /* ignore */ }
         if (!moved) { ui.set({ open: !ui.open }); return }
+        pausedRef.current = false   // 拖拽结束恢复轮动
         if (pos) ui.set({ badgePos: pos })   // 松手一次性提交
       }
 
       const sh = idx[0], sz = idx[1]
-      // 徽章主体行情项：自选前 2 只优先；无自选回退 上证（价+幅）/深成指（幅）
+      // 徽章主体行情项：自选轮动页（页码指示）；无自选回退 上证（价+幅）/深成指（幅）
       const bodyEls = top.length
-        ? top.map(function (q) {
+        ? pageQuotes.map(function (q) {
             return el('span', { key: 'w-' + q.symbol, title: (q.name || q.symbol) + ' ' + fmt(q.current) }, [
               el('span', { key: 'n', className: 'xq-badge-hint' }, (q.name || q.symbol) + ' '),
               el('span', { key: 'p', className: 'xq-badge-val ' + colorOf(q.percent) }, fmtPct(q.percent))
             ])
-          })
+          }).concat(pages > 1 ? [el('span', { key: 'pg', className: 'xq-badge-hint' }, ' ·' + (pageIdx + 1) + '/' + pages + '· ')] : [])
         : [
             sh ? el('span', { key: 'sh' }, [
               el('span', { key: 'n', className: 'xq-badge-hint' }, sh.name + ' '),
@@ -1348,19 +1373,38 @@ return {
       }
       let popEl = null
       if (pop) {
-        const rows = pop.quotes.slice(0, 8).map(function (q) {
+        // 搜索过滤（名称/代码，不区分大小写）；全部展示，列表内滚动
+        const q = query.trim().toLowerCase()
+        const filtered = q
+          ? pop.quotes.filter(function (x) {
+              return (x.name || '').toLowerCase().indexOf(q) !== -1 || (x.symbol || '').toLowerCase().indexOf(q) !== -1
+            })
+          : pop.quotes
+        const rows = filtered.map(function (x) {
           return el('div', {
-            key: q.symbol, className: 'xq-bp-row', title: '点击查看详情',
+            key: x.symbol, className: 'xq-bp-row', title: '点击查看详情',
             onClick: function (e) { e.stopPropagation(); setPop(null); ui.set({ open: true }) }
           }, [
-            el('span', { key: 'n', className: 'xq-bp-name' }, q.name || q.symbol),
-            el('span', { key: 'v', className: 'xq-bp-val ' + colorOf(q.percent) }, fmt(q.current)),
-            el('span', { key: 'p', className: 'xq-pct-chip ' + colorOf(q.percent) }, fmtPct(q.percent))
+            el('span', { key: 'n', className: 'xq-bp-name' }, x.name || x.symbol),
+            el('span', { key: 'v', className: 'xq-bp-val ' + colorOf(x.percent) }, fmt(x.current)),
+            el('span', { key: 'p', className: 'xq-pct-chip ' + colorOf(x.percent) }, fmtPct(x.percent))
           ])
         })
         popEl = el('div', { key: 'pop', className: 'xq-badge-pop', style: popStyle, onMouseEnter: onEnter, onMouseLeave: onLeave }, [
-          el('div', { key: 'hd', className: 'xq-badge-pop-hd' }, [el('span', { key: 't' }, '自选 · ' + pop.quotes.length + ' 只'), el('span', { key: 'h' }, '悬停查看 · 点击展开')]),
-          rows.length ? rows : el('div', { key: 'e', className: 'xq-muted' }, '自选为空')
+          el('div', { key: 'hd', className: 'xq-badge-pop-hd' }, [
+            el('span', { key: 't' }, '自选 · ' + filtered.length + (q ? '/' + pop.quotes.length : '') + ' 只'),
+            el('span', { key: 'h' }, '点击展开面板')
+          ]),
+          pop.quotes.length > 8
+            ? el('input', {
+                key: 'search', className: 'xq-bp-search', type: 'text', value: query,
+                placeholder: '搜索名称 / 代码…',
+                onClick: function (e) { e.stopPropagation() },
+                onChange: function (e) { setQuery(e.target.value) }
+              })
+            : null,
+          el('div', { key: 'list', className: 'xq-badge-pop-list' },
+            rows.length ? rows : el('div', { key: 'e', className: 'xq-muted' }, q ? '无匹配' : '自选为空'))
         ])
       }
 

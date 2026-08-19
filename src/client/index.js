@@ -149,7 +149,23 @@ exports.default = {
       '.xq-tick-name{color:var(--dsw-alias-label-secondary);}\n' +
       '.xq-tick-cur{font-weight:600;}\n' +
       '.xq-caret{font-size:11px;color:var(--dsw-alias-label-secondary);flex-shrink:0;}\n' +
-      '.xq-loading{font-size:12px;color:var(--dsw-alias-label-secondary);padding:12px 0;text-align:center;}\n'
+      '.xq-loading{font-size:12px;color:var(--dsw-alias-label-secondary);padding:12px 0;text-align:center;}\n' +
+      // 账号登录（可选）：粘贴浏览器 Cookie 启用云端自选股
+      '.xq-acc-btn.xq-acc-on{border-color:color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, transparent);color:var(--dsw-alias-brand-primary);}\n' +
+      '.xq-login{display:flex;flex-direction:column;gap:9px;max-width:560px;}\n' +
+      '.xq-login-hd{font-size:13.5px;font-weight:700;}\n' +
+      '.xq-login-tip{font-size:12px;color:var(--dsw-alias-label-secondary);line-height:1.7;background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);border-radius:7px;padding:7px 10px;}\n' +
+      '.xq-login-tip b{color:var(--dsw-alias-label-primary);}\n' +
+      '.xq-login-tip ol{margin:4px 0 0;padding-left:18px;}\n' +
+      '.xq-login-tip a{color:var(--dsw-alias-brand-primary);}\n' +
+      '.xq-login textarea{font-size:11.5px;font-family:ui-monospace,Menlo,monospace;width:100%;min-height:64px;resize:vertical;padding:6px 8px;border-radius:6px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);}\n' +
+      '.xq-login textarea:focus{outline:none;border-color:var(--dsw-alias-brand-primary);}\n' +
+      '.xq-login-msg{font-size:12px;}\n' +
+      '.xq-login-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}\n' +
+      '.xq-login-user{font-size:12.5px;color:var(--dsw-alias-label-primary);}\n' +
+      '.xq-login-ok{color:var(--dsw-alias-state-success-primary);}\n' +
+      '.xq-login-bad{color:var(--dsw-alias-state-warn-primary);}\n' +
+      '.xq-acc-mark{font-size:10px;color:var(--dsw-alias-label-secondary);}\n'
     )
 
     function el(type, props, children) { return React.createElement(type, props, children) }
@@ -549,6 +565,12 @@ exports.default = {
       const [loading, setLoading] = React.useState(true)
       const [sortK, setSortK] = React.useState('default')
       const [sortAsc, setSortAsc] = React.useState(false)
+      // 可选登录态（粘贴浏览器 Cookie）：null=未知，{loggedIn}=状态
+      const [login, setLoginSt] = React.useState(null)
+      const [loginOpen, setLoginOpen] = React.useState(false)
+      const [cookieInput, setCookieInput] = React.useState('')
+      const [loginBusy, setLoginBusy] = React.useState(false)
+      const [loginMsg, setLoginMsg] = React.useState(null)   // {ok, text}
       const tab = ui.tab
       function setTab(t) { ui.set({ tab: t }) }
 
@@ -615,6 +637,7 @@ exports.default = {
 
       React.useEffect(function () {
         setLoading(true)
+        call('login.status', {}).then(function (d) { setLoginSt(d || { loggedIn: false }) }).catch(function () { setLoginSt({ loggedIn: false }) })
         refreshMarket().then(function () { return refreshContent() })
           .then(function () { setLoading(false) })
           .catch(function () { setLoading(false) })
@@ -675,12 +698,13 @@ exports.default = {
           if (e.key !== 'Escape') return
           const t = e.target
           if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
-          if (view) setView(null)
+          if (loginOpen) setLoginOpen(false)
+          else if (view) setView(null)
           else ui.set({ open: false })
         }
         window.addEventListener('keydown', onKey)
         return function () { window.removeEventListener('keydown', onKey) }
-      }, [view])
+      }, [view, loginOpen])
 
       function openDetail(symbol) {
         setChartMode('kline')
@@ -724,6 +748,84 @@ exports.default = {
         setManualCode('')
       }
 
+      // ---- 可选登录 ----
+      function doLogin() {
+        const c = cookieInput.trim()
+        if (!c) { setLoginMsg({ ok: false, text: '请先粘贴 Cookie' }); return }
+        setLoginBusy(true)
+        setLoginMsg(null)
+        call('login.save', { cookie: c }).then(function (d) {
+          setLoginSt({ loggedIn: true, screenName: (d && d.screenName) || '', uid: d ? d.uid : null })
+          setLoginMsg({ ok: true, text: '登录成功' + ((d && d.screenName) ? '：' + d.screenName : '') + (d && d.symbols ? '，已同步云端自选 ' + d.symbols.length + ' 只' : '') })
+          setCookieInput('')
+          setLoginOpen(false)
+          refreshMarket()
+        }).catch(function (e) {
+          setLoginMsg({ ok: false, text: String((e && e.message) || e) })
+        }).then(function () { setLoginBusy(false) })
+      }
+
+      function doLogout() {
+        setLoginBusy(true)
+        call('login.logout', {}).then(function () {
+          setLoginSt({ loggedIn: false })
+          setLoginMsg({ ok: true, text: '已退出登录（本地自选股保留）' })
+        }).catch(function (e) {
+          setLoginMsg({ ok: false, text: String((e && e.message) || e) })
+        }).then(function () { setLoginBusy(false) })
+      }
+
+      function doPull() {
+        setLoginBusy(true)
+        setLoginMsg(null)
+        call('watchlist.pull', {}).then(function (d) {
+          setLoginMsg({ ok: true, text: '已同步云端自选 ' + (((d && d.symbols) || []).length) + ' 只' })
+          refreshMarket()
+        }).catch(function (e) {
+          setLoginMsg({ ok: false, text: String((e && e.message) || e) })
+        }).then(function () { setLoginBusy(false) })
+      }
+
+      function LoginBox() {
+        const loggedIn = !!(login && login.loggedIn)
+        return el('div', { className: 'xq-login' }, [
+          el('div', { key: 'hd', className: 'xq-login-hd' }, loggedIn ? '雪球账号 · 已登录' : '登录雪球（可选）'),
+          loggedIn
+            ? el('div', { key: 'u', className: 'xq-login-user' }, [
+                '当前账号：', el('b', { key: 'b' }, login.screenName || ('uid ' + (login.uid || '?'))),
+                el('span', { key: 'c', className: 'xq-acc-mark' }, ' · 云端自选股已启用，加/删自选会尽力同步')
+              ])
+            : el('div', { key: 'tip', className: 'xq-login-tip' }, [
+                '不登录也能用（匿名模式，自选股存本地）。登录后可直接使用', el('b', { key: 'b' }, '你在雪球的云端自选股'),
+                el('ol', { key: 'ol' }, [
+                  el('li', { key: '1' }, ['浏览器打开 ', el('a', { key: 'a', href: 'https://xueqiu.com', target: '_blank', rel: 'noreferrer' }, 'xueqiu.com'), ' 并登录']),
+                  el('li', { key: '2' }, 'F12 开发者工具 → Network → 刷新页面，任选一个 xueqiu.com 请求'),
+                  el('li', { key: '3' }, 'Request Headers 里找到 Cookie: 一行，整行复制粘贴到下面'),
+                  el('li', { key: '4' }, 'Cookie 仅保存在本机插件目录，不上传任何第三方')
+                ])
+              ]),
+          login && login.expired
+            ? el('div', { key: 'ex', className: 'xq-login-msg xq-login-bad' }, 'Cookie 已过期，请按上面步骤重新获取')
+            : null,
+          loggedIn ? null : el('textarea', {
+            key: 'ta',
+            placeholder: '粘贴 Cookie 整行，例如 xq_a_token=...; xq_id_token=...; u=...; device_id=...',
+            value: cookieInput,
+            onChange: function (e) { setCookieInput(e.target.value) }
+          }),
+          loginMsg ? el('div', { key: 'msg', className: 'xq-login-msg ' + (loginMsg.ok ? 'xq-login-ok' : 'xq-login-bad') }, loginMsg.text) : null,
+          el('div', { key: 'row', className: 'xq-login-row' }, [
+            loggedIn
+              ? el('button', { key: 'pull', className: 'xq-btn', disabled: loginBusy, onClick: doPull }, '同步云端自选')
+              : el('button', { key: 'ok', className: 'xq-btn xq-acc-on', disabled: loginBusy, onClick: doLogin }, loginBusy ? '校验中…' : '登录'),
+            loggedIn
+              ? el('button', { key: 'out', className: 'xq-btn', disabled: loginBusy, onClick: doLogout }, '退出登录')
+              : null,
+            el('button', { key: 'close', className: 'xq-btn-mini', disabled: loginBusy, onClick: function () { setLoginOpen(false); setLoginMsg(null) } }, '关闭')
+          ])
+        ])
+      }
+
       const tabs = el('div', { className: 'xq-tabs' }, [
         ['market', '行情'], ['hot', '热榜'], ['search', '搜索'], ['news', '快讯']
       ].map(function (t) {
@@ -733,6 +835,11 @@ exports.default = {
         }, t[1])
       }).concat([
         el('span', { key: 'sp', className: 'xq-spacer' }),
+        el('button', {
+          key: 'acc', className: 'xq-btn xq-acc-btn' + (login && login.loggedIn ? ' xq-acc-on' : ''),
+          title: login && login.loggedIn ? '已登录：' + (login.screenName || login.uid || '') + '（点击管理）' : '可选：登录雪球后使用云端自选股',
+          onClick: function () { setLoginMsg(null); setLoginOpen(true) }
+        }, login && login.loggedIn ? '👤 ' + (login.screenName || '已登录') : '👤 登录'),
         el('button', {
           key: 'btn', className: 'xq-btn', disabled: loading, title: '刷新全部数据',
           onClick: function () {
@@ -1002,7 +1109,9 @@ exports.default = {
       }
 
       let content
-      if (view) {
+      if (loginOpen) {
+        content = LoginBox()
+      } else if (view) {
         content = DetailView()
       } else if (tab === 'market') {
         content = MarketTab()
@@ -1015,7 +1124,7 @@ exports.default = {
       }
 
       // key 变化触发 xq-fade-in 重放：tab/详情切换有轻微淡入
-      return el('div', null, [tabs, errBox, el('div', { key: 'v-' + (view ? 'd' : tab), className: 'xq-view' }, content)])
+      return el('div', null, [tabs, errBox, el('div', { key: 'v-' + (loginOpen ? 'login' : (view ? 'd' : tab)), className: 'xq-view' }, content)])
     }
 
     // ---------- 嵌入式主面板（conversation.input.dock）：输入框上方一整行 ----------

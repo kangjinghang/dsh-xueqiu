@@ -9,6 +9,9 @@ return {
     const state = { cookie: '' }
     let watchlist = null
     let uiState = null
+    // 可选登录态：粘贴浏览器 Cookie 后启用（云端自选股）。null = 匿名模式
+    let login = null
+    let cloudPid = null   // 默认自选组合 pid（首次云端操作时探测并缓存）
 
     // ---- 请求调度：并发 2 + 最小间隔 100ms（对齐雪球网页端行为，留有安全余量）----
     const MIN_GAP_MS = 100
@@ -125,15 +128,20 @@ return {
       return r
     }
 
-    async function curl(url) {
+    async function curl(url, opts) {
+      opts = opts || {}
       const shell = getShell()
       if (!shell) throw new Error('shell 服务不可用，无法访问雪球')
-      const cookie = await ensureCookie(false)
-      let cmd = "curl -s --max-time 12 '" + url + "'"
+      // 登录态优先：请求头用用户 Cookie；显式 cookie 参数（登录校验）最高
+      const cookie = opts.cookie !== undefined ? opts.cookie : (login ? login.cookie : await ensureCookie(false))
+      let cmd = "curl -s --max-time 12 -X " + (opts.method || 'GET') + " '" + url + "'"
       cmd += " -H 'User-Agent: " + UA + "'"
       cmd += " -H 'Referer: https://www.xueqiu.com/'"
       cmd += " -H 'Accept: application/json'"
       if (cookie) cmd += " -H 'Cookie: " + cookie + "'"
+      if (opts.body) {
+        cmd += " -H 'Content-Type: application/x-www-form-urlencoded' --data '" + String(opts.body).replace(/'/g, '%27') + "'"
+      }
       const spec = shell.resolve({ command: cmd, timeoutMs: 15000, stdoutMaxBytes: 4194304 })
       const result = await shell.run(spec)
       if (result.exitCode !== 0) {
@@ -161,7 +169,7 @@ return {
       async function attempt(depth) {
         const err = await (async function () {
           let text
-          try { text = await curl(url) } catch (e) { return { kind: 'network', message: e.message, retryable: depth < 1 } }
+          try { text = await curl(url, { cookie: opts.cookie }) } catch (e) { return { kind: 'network', message: e.message, retryable: depth < 1 } }
           if (!text) return { kind: 'empty', message: '雪球返回空响应（可能被风控）', retryable: true }
           let data
           try { data = JSON.parse(text) } catch (e) { return { kind: 'parse', message: '响应解析失败: ' + text.slice(0, 120), retryable: false } }
@@ -463,6 +471,7 @@ return {
       if (wl.symbols.indexOf(symbol) === -1) {
         wl.symbols.push(symbol)
         await saveWatchlist()
+        cloudWatchAdd(symbol)   // 尽力而为：云端添加失败不影响本地
       }
       return { symbols: wl.symbols }
     }
@@ -474,8 +483,194 @@ return {
       if (i !== -1) {
         wl.symbols.splice(i, 1)
         await saveWatchlist()
+        cloudWatchDelete(symbol)   // 尽力而为：云端删除失败不影响本地
       }
       return { symbols: wl.symbols }
+    }
+
+    // ---- 可选登录：粘贴浏览器 Cookie（借鉴 xueqiu-cli 手动模式）----
+    // 雪球登录态 = xq_a_token(+xq_id_token/u) 两个 Cookie，本地解析 JWT 即可拿到 uid/昵称/过期时间
+    function b64urlDecode(s) {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
+      const map = {}
+      for (let i = 0; i < chars.length; i++) map[chars[i]] = i
+      let bits = 0, acc = 0, out = ''
+      for (let i = 0; i < s.length; i++) {
+        const v = map[s[i]]
+        if (v === undefined) continue
+        acc = (acc << 6) | v
+        bits += 6
+        if (bits >= 8) {
+          bits -= 8
+          out += String.fromCharCode((acc >> bits) & 0xff)
+        }
+      }
+      // UTF-8 多字节还原：先转码单元再 decode
+      try { return decodeURIComponent(out.split('').map(function (c) { return '%' + ('0' + c.charCodeAt(0).toString(16)).slice(-2) }).join('')) }
+      catch (e) { return out }
+    }
+
+    function decodeJwt(token) {
+      try {
+        const parts = String(token).split('.')
+        if (parts.length < 2) return null
+        return JSON.parse(b64urlDecode(parts[1]))
+      } catch (e) { return null }
+    }
+
+    function cookieJar(cookie) {
+      const jar = {}
+      String(cookie || '').split(';').forEach(function (kv) {
+        const i = kv.indexOf('=')
+        if (i > 0) jar[kv.slice(0, i).trim()] = kv.slice(i + 1).trim()
+      })
+      return jar
+    }
+
+    function cleanCookieInput(raw) {
+      let c = String(raw || '').trim()
+      if (/^cookie\s*:/i.test(c)) c = c.replace(/^cookie\s*:\s*/i, '')
+      return c.replace(/[\r\n]+/g, ' ').trim()
+    }
+
+    async function loadLogin() {
+      if (login !== null) return login
+      const fs = ctx.get('fs')
+      const sp = ctx.get('sandboxPolicy')
+      const root = sp && sp.workspaceRoot ? sp.workspaceRoot : null
+      if (fs && root) {
+        try {
+          const target = await fs.resolve('.xueqiu-login.json', { cwd: root })
+          const text = await fs.readText(target)
+          const parsed = JSON.parse(text)
+          if (parsed && parsed.cookie && /xq_a_token=/.test(parsed.cookie)) login = parsed
+        } catch (e) { /* 未登录 */ }
+      }
+      return login
+    }
+
+    async function saveLogin() {
+      const fs = ctx.get('fs')
+      const sp = ctx.get('sandboxPolicy')
+      const root = sp && sp.workspaceRoot ? sp.workspaceRoot : null
+      if (!fs || !root) return
+      try {
+        const target = await fs.resolve('.xueqiu-login.json', { cwd: root })
+        await fs.writeText(target, JSON.stringify(login || {}))
+      } catch (e) { /* 保持内存态 */ }
+    }
+
+    // 云端自选股：默认组合 pid 探测 + 股票列表（端点来自 pysnowball api_ref）
+    async function fetchCloudWatchlist() {
+      const plist = await getJSON('/v5/stock/portfolio/list.json', { system: 'true' }, {})
+      const data = (plist && plist.data) || plist || {}
+      const portfolios = data.portfolios || []
+      const def = portfolios[0] || null
+      const pid = def ? (def.pid || def.id || def.portfolio_id) : null
+      if (def && !pid && def.portfolio_id) return { pid: null, symbols: [] }
+      if (!pid) return { pid: null, symbols: [] }
+      cloudPid = pid
+      const s = await getJSON('/v5/stock/portfolio/stock/list.json', { size: 200, category: 1, pid: pid }, {})
+      const stocks = ((s && s.data && s.data.stocks) || (s && s.data) || [])
+      const symbols = []
+      for (let i = 0; i < stocks.length; i++) {
+        const sym = stocks[i] && (stocks[i].stock_symbol || stocks[i].symbol)
+        if (sym && symbols.indexOf(sym) === -1) symbols.push(sym)
+      }
+      return { pid: pid, symbols: symbols }
+    }
+
+    async function ensureCloudPid() {
+      if (cloudPid) return cloudPid
+      try { await fetchCloudWatchlist() } catch (e) { /* 未登录或接口变动 */ }
+      return cloudPid
+    }
+
+    // 云端加/删自选（尽力而为：端点为网页端行为，失败静默回退本地）
+    async function cloudWatchAdd(symbol) {
+      if (!login) return
+      const pid = await ensureCloudPid()
+      if (!pid) return
+      await curl(BASE + '/v5/stock/watch.json?symbol=' + enc(symbol) + '&pid=' + enc(pid), { method: 'POST', body: 'flag=1' })
+    }
+
+    async function cloudWatchDelete(symbol) {
+      if (!login) return
+      const pid = await ensureCloudPid()
+      if (!pid) return
+      await curl(BASE + '/v5/stock/watch.json?symbol=' + enc(symbol) + '&pid=' + enc(pid), { method: 'DELETE' })
+    }
+
+    async function actLoginStatus() {
+      const lg = await loadLogin()
+      if (!lg) return { loggedIn: false }
+      // 本地 JWT 过期预检：过期则提示重登（不自动清除，等用户确认）
+      let expired = false
+      const jar = cookieJar(lg.cookie)
+      const jwt = jar.xq_id_token ? decodeJwt(jar.xq_id_token) : null
+      if (jwt && jwt.exp && Date.now() / 1000 > jwt.exp) expired = true
+      return { loggedIn: !expired, expired: expired, screenName: lg.screenName || '', uid: lg.uid || null }
+    }
+
+    async function actLoginSave(args) {
+      const cookie = cleanCookieInput(args.cookie)
+      if (!cookie || cookie.indexOf('xq_a_token=') === -1) {
+        throw new Error('Cookie 中缺少 xq_a_token，请确认复制的是已登录雪球的完整 Cookie 请求头')
+      }
+      const jar = cookieJar(cookie)
+      let uid = null, screenName = ''
+      const jwt = jar.xq_id_token ? decodeJwt(jar.xq_id_token) : null
+      if (jwt) {
+        uid = jwt.uid || null
+        screenName = String(jwt.cn || jwt.screen_name || jwt.name || '')
+        if (jwt.exp && Date.now() / 1000 > jwt.exp) {
+          throw new Error('Cookie 已过期（登录令牌有效期已过），请重新登录雪球后复制新 Cookie')
+        }
+      }
+      if (!uid && jar.u) uid = jar.u
+      // 远端校验 + 探测默认自选组合（不走 getJSON 重试链，校验失败直接报给用户）
+      const url = BASE + '/v5/stock/portfolio/list.json' + toQuery({ system: 'true' })
+      let plist
+      try {
+        const text = await curl(url, { cookie: cookie })
+        plist = JSON.parse(text)
+      } catch (e) {
+        throw new Error('无法访问雪球校验 Cookie: ' + String((e && e.message) || e))
+      }
+      const cls = classifyError(plist)
+      if (cls) throw new Error('Cookie 校验失败 [' + cls.code + ']: ' + cls.desc + '（请确认浏览器处于登录状态后重新复制）')
+      login = { cookie: cookie, uid: uid, screenName: screenName, savedAt: Date.now() }
+      cloudPid = null
+      await saveLogin()
+      // 登录成功即拉一次云端自选覆盖本地（失败不阻塞登录）
+      let symbols = null
+      try {
+        const cloud = await fetchCloudWatchlist()
+        if (cloud.symbols && cloud.symbols.length) {
+          watchlist = { symbols: cloud.symbols.slice(0, 50) }
+          await saveWatchlist()
+          symbols = watchlist.symbols
+        }
+      } catch (e) { /* 云端自选拉取失败，保留本地列表 */ }
+      return { loggedIn: true, screenName: screenName, uid: uid, symbols: symbols }
+    }
+
+    async function actLoginLogout() {
+      login = null
+      cloudPid = null
+      await saveLogin()   // 写入 {} 清空
+      return { loggedIn: false }
+    }
+
+    async function actWatchlistPull() {
+      const lg = await loadLogin()
+      if (!lg) throw new Error('未登录：请先在「账号」中粘贴 Cookie 登录')
+      const cloud = await fetchCloudWatchlist()
+      if (cloud.symbols.length) {
+        watchlist = { symbols: cloud.symbols.slice(0, 50) }
+        await saveWatchlist()
+      }
+      return { symbols: (watchlist || {}).symbols || [] }
     }
 
     // ---- UI 状态持久化 ----
@@ -539,9 +734,11 @@ return {
       hot: actHot, search: actSearch, searchPosts: actSearchPosts, news: actNews,
       kol: actKOL, user: actUser, finance: actFinance,
       'watchlist.get': actWatchlistGet, 'watchlist.add': actWatchlistAdd, 'watchlist.remove': actWatchlistRemove,
+      'watchlist.pull': actWatchlistPull,
+      'login.status': actLoginStatus, 'login.save': actLoginSave, 'login.logout': actLoginLogout,
       'ui.get': actUiGet, 'ui.set': actUiSet,
       debug: async function () {
-        return { running: running, waiters: waiters.length, inflight: Array.from(inflight.keys()), cacheKeys: cache.size, cookie: state.cookie ? 'set' : 'none' }
+        return { running: running, waiters: waiters.length, inflight: Array.from(inflight.keys()), cacheKeys: cache.size, cookie: state.cookie ? 'set' : 'none', login: login ? ('uid=' + (login.uid || '?')) : 'anonymous' }
       }
     }
 

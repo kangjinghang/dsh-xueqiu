@@ -66,9 +66,10 @@ return {
       '.xq-news-item{position:relative;}\n' +
       // 徽章 hover 预览弹层
       // 徽章区域模式：右下角宽度调节手柄（⤡），拖动横向改变宽度
-      '.xq-badge-grip{position:absolute;right:0;bottom:0;width:14px;height:14px;cursor:ew-resize;display:flex;align-items:flex-end;justify-content:flex-end;color:var(--dsw-alias-label-secondary);font-size:9px;line-height:1;opacity:0;transition:opacity .15s;}\n' +
+      '.xq-badge-grip{position:absolute;right:2px;bottom:2px;width:16px;height:16px;cursor:ew-resize;display:flex;align-items:flex-end;justify-content:flex-end;color:var(--dsw-alias-label-secondary);font-size:9px;line-height:1;opacity:0;transition:opacity .15s;}\n' +
       '.xq-badge:hover .xq-badge-grip{opacity:.85;}\n' +
-      '.xq-wgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px 12px;}\n' +
+      '.xq-badge-hd{display:flex;align-items:center;gap:8px;}\n' +
+      '.xq-wgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px 12px;padding:1px 8px 1px 0;}\n' +
       '.xq-witem{white-space:nowrap;display:flex;justify-content:space-between;gap:6px;}\n' +
       '.xq-witem .xq-badge-hint{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;}\n' +
       '.xq-idxgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px 12px;padding-bottom:5px;border-bottom:1px solid var(--dsw-alias-border-l2);}\n' +
@@ -1361,9 +1362,12 @@ return {
         title: '点击开合行情面板 · 拖动调整位置 · 右下角 ⤡ 调宽度（双击复位）',
         onPointerDown: onDown, onPointerMove: onMove, onPointerUp: onUp, onPointerCancel: onUp
       }, [
-        el('span', { key: 'logo' }, [el('b', { key: 'b' }, '雪球'), 'mini']),
-        el('span', { key: 'st', className: 'xq-status' + (aSession() === '盘中' ? ' xq-live' : ''), title: sessionsText() }, (function () { var s = aSession(); return s === '盘中' ? '● 盘中' : (s || (mOpen ? '● 盘中' : '休市')) })()),
-        el('span', { key: 'ct', className: 'xq-caret' }, ui.open ? '▾' : '▴'),
+        el('div', { key: 'hd', className: 'xq-badge-hd' }, [
+          el('span', { key: 'logo' }, [el('b', { key: 'b' }, '雪球'), 'mini']),
+          el('span', { key: 'st', className: 'xq-status' + (aSession() === '盘中' ? ' xq-live' : ''), title: sessionsText() }, (function () { var s = aSession(); return s === '盘中' ? '● 盘中' : (s || (mOpen ? '● 盘中' : '休市')) })()),
+          el('span', { key: 'sp', className: 'xq-spacer' }),
+          el('span', { key: 'ct', className: 'xq-caret' }, ui.open ? '▾' : '▴')
+        ]),
         idxEls,
         bodyEls,
         el('span', {

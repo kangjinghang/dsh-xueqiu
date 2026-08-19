@@ -8,7 +8,7 @@ return {
       '.xq-dock-body{height:52vh;max-height:80vh;overflow-y:auto;padding:8px 12px 10px;}\n' +
       '.xq-dock-resize{display:flex;align-items:center;justify-content:center;height:12px;cursor:ns-resize;user-select:none;border-top:1px solid var(--dsw-alias-border-l1);}\n' +
       '.xq-dock-resize span{display:block;width:36px;height:3px;border-radius:2px;background:var(--dsw-alias-border-l2);}\n' +
-      '.xq-badge{position:fixed;right:16px;bottom:64px;display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;padding:6px 12px;border-radius:14px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);box-shadow:0 6px 24px rgba(0,0,0,.25);font-size:11.5px;line-height:1.4;color:var(--dsw-alias-label-primary);cursor:grab;user-select:none;pointer-events:auto;z-index:1200;}\n' +
+      '.xq-badge{position:fixed;right:16px;bottom:64px;display:flex;flex-direction:column;align-items:stretch;gap:6px;padding:8px 12px;border-radius:14px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);box-shadow:0 6px 24px rgba(0,0,0,.25);font-size:11.5px;line-height:1.4;color:var(--dsw-alias-label-primary);cursor:grab;user-select:none;pointer-events:auto;z-index:1200;}\n' +
       '.xq-badge:active{cursor:grabbing;}\n' +
       '.xq-badge b{color:var(--dsw-alias-brand-primary);}\n' +
       '.xq-badge-val{font-weight:700;}\n' +
@@ -68,7 +68,11 @@ return {
       // 徽章区域模式：右下角宽度调节手柄（⤡），拖动横向改变宽度
       '.xq-badge-grip{position:absolute;right:0;bottom:0;width:14px;height:14px;cursor:ew-resize;display:flex;align-items:flex-end;justify-content:flex-end;color:var(--dsw-alias-label-secondary);font-size:9px;line-height:1;opacity:0;transition:opacity .15s;}\n' +
       '.xq-badge:hover .xq-badge-grip{opacity:.85;}\n' +
-      '.xq-witem{white-space:nowrap;}\n' +
+      '.xq-wgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px 12px;}\n' +
+      '.xq-witem{white-space:nowrap;display:flex;justify-content:space-between;gap:6px;}\n' +
+      '.xq-witem .xq-badge-hint{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;}\n' +
+      '.xq-idxgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px 12px;padding-bottom:5px;border-bottom:1px solid var(--dsw-alias-border-l2);}\n' +
+      '.xq-idxrow{display:flex;justify-content:space-between;gap:6px;white-space:nowrap;}\n' +
       '.xq-grid{display:grid;gap:0;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;overflow:hidden;margin-bottom:8px;}\n' +
       '.xq-grid-hd,.xq-grid-row{display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr 84px;align-items:center;}\n' +
       '.xq-grid-hd{font-size:11px;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-2);padding:5px 8px;}\n' +
@@ -556,7 +560,7 @@ return {
       function refreshMarket() {
         return Promise.all([
           call('watchlist.get', {}),
-          call('quote', { symbols: ['SH000001', 'SZ399001', 'SZ399006', 'SH000300'] })
+          call('quote', { symbols: ['SH000001', 'SZ399001', 'SZ399006', 'SH000688'] })
         ]).then(function (res) {
           const wl = (res[0] && res[0].symbols) || []
           const status = res[1] ? res[1].status : null
@@ -1227,7 +1231,7 @@ return {
         let alive = true
         function refresh() {
           if (pageHidden()) return   // 页面隐藏时暂停徽章轮询
-          call('quote', { symbols: ['SH000001', 'SZ399001'] }).then(function (data) {
+          call('quote', { symbols: ['SH000001', 'SZ399001', 'SZ399006', 'SH000688'] }).then(function (data) {
             if (!alive) return
             setIdx((data && data.list) || [])
             const st = data ? data.status : null
@@ -1320,7 +1324,7 @@ return {
         saveUi()
       }
 
-      const sh = idx[0], sz = idx[1]
+
       // 默认区域模式：自选静态平铺（badgeW 未设置时用默认宽 320px；双击手柄回到 320 而非单行）
       const wide = true
       const effW = (ui.badgeW !== null && ui.badgeW !== undefined) ? ui.badgeW : 320
@@ -1331,19 +1335,17 @@ return {
           el('span', { key: 'p', className: 'xq-badge-val ' + colorOf(q.percent) }, fmtPct(q.percent))
         ])
       }
+      // 指数区：4 指数两列（上证 深证 创业 科创50），有自选时作为区域头部，无自选时即主体
+      function idxRow(q) {
+        return el('span', { key: 'ix-' + q.symbol, className: 'xq-idxrow', title: (q.name || q.symbol) + ' ' + fmt(q.current) }, [
+          el('span', { key: 'n', className: 'xq-badge-hint' }, (q.name || q.symbol)),
+          el('span', { key: 'p', className: 'xq-badge-val ' + colorOf(q.percent) }, fmtPct(q.percent))
+        ])
+      }
+      const idxEls = el('div', { key: 'idx', className: 'xq-idxgrid' }, idx.map(idxRow))
       const bodyEls = top.length
-        ? top.map(wItem)
-        : [
-            sh ? el('span', { key: 'sh' }, [
-              el('span', { key: 'n', className: 'xq-badge-hint' }, sh.name + ' '),
-              el('span', { key: 'v', className: 'xq-badge-val ' + colorOf(sh.percent) }, fmt(sh.current)),
-              el('span', { key: 'p', className: colorOf(sh.percent) }, ' ' + fmtPct(sh.percent))
-            ]) : null,
-            sz ? el('span', { key: 'sz' }, [
-              el('span', { key: 'n', className: 'xq-badge-hint' }, ' 深成指 '),
-              el('span', { key: 'p', className: colorOf(sz.percent) }, fmtPct(sz.percent))
-            ]) : null
-          ]
+        ? el('div', { key: 'wg', className: 'xq-wgrid' }, top.map(wItem))
+        : null
       let style = ui.badgePos
         ? { left: ui.badgePos.x, top: ui.badgePos.y, right: 'auto', bottom: 'auto' }
         : null
@@ -1361,14 +1363,15 @@ return {
       }, [
         el('span', { key: 'logo' }, [el('b', { key: 'b' }, '雪球'), 'mini']),
         el('span', { key: 'st', className: 'xq-status' + (aSession() === '盘中' ? ' xq-live' : ''), title: sessionsText() }, (function () { var s = aSession(); return s === '盘中' ? '● 盘中' : (s || (mOpen ? '● 盘中' : '休市')) })()),
-      ].concat(bodyEls).concat([
         el('span', { key: 'ct', className: 'xq-caret' }, ui.open ? '▾' : '▴'),
+        idxEls,
+        bodyEls,
         el('span', {
-          key: 'grip', className: 'xq-badge-grip', title: '拖动调宽度 · 双击复位单行',
+          key: 'grip', className: 'xq-badge-grip', title: '拖动调宽度 · 双击复位',
           onPointerDown: onGripDown, onPointerMove: onGripMove, onPointerUp: onGripUp, onPointerCancel: onGripUp,
           onDoubleClick: onGripDblClick
         }, '⤡')
-      ]))
+      ])
       return el('div', { style: { contents: 'display' } }, [badgeEl])
     }
 
@@ -1379,7 +1382,7 @@ return {
         let alive = true
         function refresh() {
           if (pageHidden()) return   // 页面隐藏时暂停指数条轮询
-          call('quote', { symbols: ['SH000001', 'SZ399001', 'SZ399006', 'SH000300'] }).then(function (data) {
+          call('quote', { symbols: ['SH000001', 'SZ399001', 'SZ399006', 'SH000688'] }).then(function (data) {
             if (alive) setIndices((data && data.list) || [])
           }).catch(function () { /* 静默失败 */ })
         }

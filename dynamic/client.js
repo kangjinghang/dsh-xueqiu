@@ -1208,16 +1208,13 @@ return {
     }
 
     // ---------- 迷你悬浮徽章（shell.overlay）：可拖动、右下角手柄调宽度 ----------
-    // 形态 C：默认单行轮动条（每 8s 翻 2 只）；拖宽后变静态平铺区域（前 12 只换行铺开，无轮动）。
+    // 形态 C：默认区域模式（320px 宽，前 12 只自选静态平铺换行）；⤡ 手柄可调宽 120–480px，双击复位 320。
     // 悬停弹层已砍掉：速览靠拉宽徽章，完整功能点徽章开面板。
     function MiniBadge() {
       const [idx, setIdx] = React.useState([])
       const [top, setTop] = React.useState([])
-      const [page, setPage] = React.useState(0)
       const [mOpen, setMOpen] = React.useState(true)
       const [, force] = React.useState(0)
-      const rotateRef = React.useRef(null)
-      const pausedRef = React.useRef(false)
 
       React.useEffect(function () {
         let alive = true
@@ -1242,11 +1239,6 @@ return {
         function onVis() { if (!pageHidden()) refresh() }
         refresh()
         const stop = ctx.interval(refresh, 30000)
-        // 自选轮动：每 8s 翻一页（拖拽/页面隐藏时暂停；仅单行模式生效）
-        rotateRef.current = setInterval(function () {
-          if (pausedRef.current || pageHidden()) return
-          setPage(function (p) { return p + 1 })
-        }, 8000)
         const off = ui.subscribe(function () { force(function (x) { return x + 1 }) })
         try { document.addEventListener('visibilitychange', onVis) } catch (e) { /* ignore */ }
         return function () {
@@ -1255,15 +1247,8 @@ return {
         }
       }, [])
 
-      // 自选页：每页 2 只，page 超界自动回绕
-      const ROTATE_PAGE_SIZE = 2
-      const pages = Math.ceil(top.length / ROTATE_PAGE_SIZE)
-      const pageIdx = pages ? (page % pages) : 0
-      const pageQuotes = top.slice(pageIdx * ROTATE_PAGE_SIZE, pageIdx * ROTATE_PAGE_SIZE + ROTATE_PAGE_SIZE)
-
       function onDown(e) {
         if (e.pointerType === 'mouse' && e.button !== 0) return
-        pausedRef.current = true   // 拖拽期间暂停轮动
         badgeDrag = { x: e.clientX, y: e.clientY }
         badgeMoved = false
         try { e.currentTarget.setPointerCapture(e.pointerId) } catch (err) { /* ignore */ }
@@ -1295,7 +1280,6 @@ return {
         badgeMoved = false
         try { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId) } catch (err) { /* ignore */ }
         if (!moved) { ui.set({ open: !ui.open }); return }
-        pausedRef.current = false   // 拖拽结束恢复轮动
         if (pos) ui.set({ badgePos: pos })   // 松手一次性提交
       }
 
@@ -1325,12 +1309,14 @@ return {
       }
       function onGripDblClick(e) {
         e.stopPropagation()
-        ui.set({ badgeW: null })   // 复位为自然宽度单行条
+        ui.set({ badgeW: null })   // 复位为默认区域宽度（320px）
         saveUi()
       }
 
       const sh = idx[0], sz = idx[1]
-      const wide = ui.badgeW !== null && ui.badgeW !== undefined   // 区域模式（静态平铺）
+      // 默认区域模式：自选静态平铺（badgeW 未设置时用默认宽 320px；双击手柄回到 320 而非单行）
+      const wide = true
+      const effW = (ui.badgeW !== null && ui.badgeW !== undefined) ? ui.badgeW : 320
       // 区域模式：前 12 只全部平铺（换行）；单行模式：轮动页（页码指示）
       function wItem(q) {
         return el('span', { key: 'w-' + q.symbol, className: 'xq-witem', title: (q.name || q.symbol) + ' ' + fmt(q.current) + (q.percent !== undefined ? '  ' + fmtPct(q.percent) : '') }, [
@@ -1339,9 +1325,7 @@ return {
         ])
       }
       const bodyEls = top.length
-        ? (wide
-            ? top.map(wItem)
-            : pageQuotes.map(wItem).concat(pages > 1 ? [el('span', { key: 'pg', className: 'xq-badge-hint' }, ' ·' + (pageIdx + 1) + '/' + pages + '· ')] : []))
+        ? top.map(wItem)
         : [
             sh ? el('span', { key: 'sh' }, [
               el('span', { key: 'n', className: 'xq-badge-hint' }, sh.name + ' '),
@@ -1358,8 +1342,8 @@ return {
         : null
       if (wide) {
         ;(style = style || {})
-        style.maxWidth = ui.badgeW + 'px'
-        style.width = ui.badgeW + 'px'
+        style.maxWidth = effW + 'px'
+        style.width = effW + 'px'
       }
 
       const badgeEl = el('div', {

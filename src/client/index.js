@@ -71,6 +71,25 @@ exports.default = {
       '@keyframes xq-flash-down{0%{background:color-mix(in srgb, var(--dsw-alias-state-success-primary) 18%, transparent);}100%{background:transparent;}}\n' +
       '.xq-flash-up{animation:xq-flash-up .8s ease-out;}\n' +
       '.xq-flash-down{animation:xq-flash-down .8s ease-out;}\n' +
+      // 微交互：内容切换淡入 + 刷新按钮旋转
+      '@keyframes xq-fade-in{from{opacity:0;transform:translateY(3px);}to{opacity:1;transform:none;}}\n' +
+      '.xq-view{animation:xq-fade-in .18s ease-out;}\n' +
+      '@keyframes xq-spin{to{transform:rotate(360deg);}}\n' +
+      '.xq-refresh-spin{display:inline-block;animation:xq-spin .8s linear infinite;}\n' +
+      '.xq-tab{transition:color .15s,border-color .15s;}\n' +
+      // 快讯时间轴：左侧竖线 + 时间锚点分组
+      '.xq-news-tl{position:relative;padding-left:14px;}\n' +
+      '.xq-news-tl::before{content:"";position:absolute;left:4px;top:6px;bottom:6px;width:1px;background:var(--dsw-alias-border-l2);}\n' +
+      '.xq-news-group{font-size:10.5px;color:var(--dsw-alias-label-secondary);margin:8px 0 5px;display:flex;align-items:center;gap:6px;}\n' +
+      '.xq-news-group::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--dsw-alias-border-l2);margin-left:-13px;flex:none;}\n' +
+      '.xq-news-item{position:relative;}\n' +
+      // 徽章 hover 预览弹层
+      '.xq-badge-pop{position:fixed;z-index:1201;min-width:210px;max-width:280px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.28);padding:8px 10px;font-size:12px;}\n' +
+      '.xq-badge-pop-hd{font-size:10.5px;color:var(--dsw-alias-label-secondary);margin-bottom:5px;display:flex;justify-content:space-between;}\n' +
+      '.xq-bp-row{display:flex;align-items:center;gap:8px;padding:2.5px 0;cursor:pointer;border-radius:5px;}\n' +
+      '.xq-bp-row:hover{background:var(--dsw-alias-bg-layer-2);}\n' +
+      '.xq-bp-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}\n' +
+      '.xq-bp-val{font-weight:600;}\n' +
       '.xq-grid{display:grid;gap:0;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;overflow:hidden;margin-bottom:8px;}\n' +
       '.xq-grid-hd,.xq-grid-row{display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr 84px;align-items:center;}\n' +
       '.xq-grid-hd{font-size:11px;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-2);padding:5px 8px;}\n' +
@@ -274,8 +293,8 @@ exports.default = {
       const rows = props.rows || []
       const [hi, setHi] = React.useState(null)
       if (!rows.length) return el('div', { className: 'xq-muted' }, '暂无K线数据')
-      const W = 640, MAIN = 150, VOL = 44, PAD = 6, GAP = 4
-      const H = MAIN + VOL + GAP + PAD
+      const W = 640, MAIN = 150, VOL = 44, PAD = 6, GAP = 4, LBL = 14
+      const H = MAIN + VOL + GAP + PAD + LBL
       let min = Infinity, max = -Infinity
       for (let i = 0; i < rows.length; i++) {
         const rlo = Number(rows[i].low), rhi = Number(rows[i].high)
@@ -289,7 +308,7 @@ exports.default = {
       const bw = Math.max(step * 0.66, 1)
       const yOf = function (v) { return PAD + (1 - (v - min) / range) * (MAIN - PAD * 2) }
       const vTop = PAD + MAIN + GAP
-      const vBottom = H - PAD
+      const vBottom = H - PAD - LBL
       const vH = vBottom - vTop
       let vmax = 0
       for (let i = 0; i < rows.length; i++) {
@@ -349,9 +368,18 @@ exports.default = {
         const r = rows[hi]
         const cx = PAD + step * hi + step / 2
         const cy = yOf(Number(r.close))
+        // 轴标签：光标价位（右侧底色块）+ 日期（底部底色块）
+        const priceTxt = fmt(Number(r.close))
+        const pLblW = priceTxt.length * 5.6 + 8
+        const dateTxt = fmtFullDay(r.timestamp).slice(5)   // MM-DD
+        const dLblW = dateTxt.length * 5.6 + 8
         cross = [
           el('line', { key: 'cv', x1: cx, y1: PAD, x2: cx, y2: vBottom, stroke: 'var(--dsw-alias-label-secondary)', strokeWidth: 0.6, strokeDasharray: '3 3', opacity: 0.7 }),
-          el('line', { key: 'ch', x1: PAD, y1: cy, x2: W - PAD, y2: cy, stroke: 'var(--dsw-alias-label-secondary)', strokeWidth: 0.6, strokeDasharray: '3 3', opacity: 0.7 })
+          el('line', { key: 'ch', x1: PAD, y1: cy, x2: W - PAD, y2: cy, stroke: 'var(--dsw-alias-label-secondary)', strokeWidth: 0.6, strokeDasharray: '3 3', opacity: 0.7 }),
+          el('rect', { key: 'pbg', x: W - PAD - pLblW, y: cy - 7, width: pLblW, height: 14, rx: 3, fill: 'var(--dsw-alias-bg-layer-2)', stroke: 'var(--dsw-alias-border-l2)', strokeWidth: 0.5 }),
+          el('text', { key: 'ptx', x: W - PAD - pLblW / 2, y: cy + 3.5, fontSize: 9, textAnchor: 'middle', fill: 'var(--dsw-alias-label-primary)' }, priceTxt),
+          el('rect', { key: 'dbg', x: Math.min(Math.max(PAD, cx - dLblW / 2), W - PAD - dLblW), y: vBottom + 1, width: dLblW, height: 13, rx: 3, fill: 'var(--dsw-alias-bg-layer-2)', stroke: 'var(--dsw-alias-border-l2)', strokeWidth: 0.5 }),
+          el('text', { key: 'dtx', x: Math.min(Math.max(PAD, cx - dLblW / 2), W - PAD - dLblW) + dLblW / 2, y: vBottom + 10.5, fontSize: 9, textAnchor: 'middle', fill: 'var(--dsw-alias-label-primary)' }, dateTxt)
         ]
         tip = el('div', {
           key: 'tip', className: 'xq-tip',
@@ -409,7 +437,7 @@ exports.default = {
       const [hi, setHi] = React.useState(null)
       const lastClose = Number(props.lastClose)
       if (!items.length) return el('div', { className: 'xq-muted' }, '暂无分时数据')
-      const W = 640, H = 170, PAD = 6
+      const W = 640, CH = 170, LBL = 14, H = CH + LBL, PAD = 6   // CH 图区 + LBL 底部时间标签条
       let min = Infinity, max = -Infinity
       for (let i = 0; i < items.length; i++) {
         const c = Number(items[i].current)
@@ -419,7 +447,7 @@ exports.default = {
       if (lastClose) { if (lastClose < min) min = lastClose; if (lastClose > max) max = lastClose }
       if (!isFinite(min) || !isFinite(max) || min === max) { min -= 1; max += 1 }
       const range = max - min
-      const yOf = function (v) { return PAD + (1 - (v - min) / range) * (H - PAD * 2) }
+      const yOf = function (v) { return PAD + (1 - (v - min) / range) * (CH - PAD * 2) }
       const xOf = function (i) { return PAD + (i / (items.length - 1)) * (W - PAD * 2) }
       const pricePts = []
       const avgPts = []
@@ -447,9 +475,18 @@ exports.default = {
         const it = items[hi]
         const cx = xOf(hi), cy = yOf(Number(it.current))
         const pct = lastClose ? (Number(it.current) - lastClose) / lastClose * 100 : null
+        // 轴标签：光标价位（右侧）+ 时间（底部）
+        const priceTxt = fmt(Number(it.current))
+        const pLblW = priceTxt.length * 5.6 + 8
+        const timeTxt = it.timestamp ? fmtTime(it.timestamp) : ''
+        const dLblW = timeTxt.length * 5.6 + 8
         cross = [
-          el('line', { key: 'cv', x1: cx, y1: PAD, x2: cx, y2: H - PAD, stroke: 'var(--dsw-alias-label-secondary)', strokeWidth: 0.6, strokeDasharray: '3 3', opacity: 0.7 }),
-          el('line', { key: 'ch', x1: PAD, y1: cy, x2: W - PAD, y2: cy, stroke: 'var(--dsw-alias-label-secondary)', strokeWidth: 0.6, strokeDasharray: '3 3', opacity: 0.7 })
+          el('line', { key: 'cv', x1: cx, y1: PAD, x2: cx, y2: CH - PAD, stroke: 'var(--dsw-alias-label-secondary)', strokeWidth: 0.6, strokeDasharray: '3 3', opacity: 0.7 }),
+          el('line', { key: 'ch', x1: PAD, y1: cy, x2: W - PAD, y2: cy, stroke: 'var(--dsw-alias-label-secondary)', strokeWidth: 0.6, strokeDasharray: '3 3', opacity: 0.7 }),
+          el('rect', { key: 'pbg', x: W - PAD - pLblW, y: cy - 7, width: pLblW, height: 14, rx: 3, fill: 'var(--dsw-alias-bg-layer-2)', stroke: 'var(--dsw-alias-border-l2)', strokeWidth: 0.5 }),
+          el('text', { key: 'ptx', x: W - PAD - pLblW / 2, y: cy + 3.5, fontSize: 9, textAnchor: 'middle', fill: 'var(--dsw-alias-label-primary)' }, priceTxt),
+          el('rect', { key: 'dbg', x: Math.min(Math.max(PAD, cx - dLblW / 2), W - PAD - dLblW), y: CH + 1, width: dLblW, height: 13, rx: 3, fill: 'var(--dsw-alias-bg-layer-2)', stroke: 'var(--dsw-alias-border-l2)', strokeWidth: 0.5 }),
+          el('text', { key: 'dtx', x: Math.min(Math.max(PAD, cx - dLblW / 2), W - PAD - dLblW) + dLblW / 2, y: CH + 10.5, fontSize: 9, textAnchor: 'middle', fill: 'var(--dsw-alias-label-primary)' }, timeTxt)
         ]
         tip = el('div', {
           key: 'tip', className: 'xq-tip',
@@ -697,12 +734,12 @@ exports.default = {
       }).concat([
         el('span', { key: 'sp', className: 'xq-spacer' }),
         el('button', {
-          key: 'btn', className: 'xq-btn', disabled: loading,
+          key: 'btn', className: 'xq-btn', disabled: loading, title: '刷新全部数据',
           onClick: function () {
             setLoading(true)
             Promise.all([refreshMarket(), refreshContent()]).then(function () { setLoading(false) }).catch(function () { setLoading(false) })
           }
-        }, '刷新')
+        }, loading ? [el('span', { key: 's', className: 'xq-refresh-spin' }, '⟳'), ' 刷新中'] : '刷新')
       ]))
 
       const errBox = err ? el('div', { className: 'xq-err' }, err) : null
@@ -927,11 +964,25 @@ exports.default = {
       }
 
       function NewsTab() {
-        const kids = news.map(function (it) {
-          return el('div', { key: String(it.id), className: 'xq-news-item' + (it.mark === 1 ? ' xq-important' : '') }, [
+        // 时间轴：按「今天/昨天/M月D日」分组，每组一个锚点头
+        const kids = []
+        let lastDay = null
+        news.forEach(function (it) {
+          const d = new Date(it.created_at)
+          const now = new Date()
+          const sameDay = function (a, b) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate() }
+          const yest = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
+          let label = null
+          const dayKey = d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate()
+          if (dayKey !== lastDay) {
+            lastDay = dayKey
+            label = sameDay(d, now) ? '今天' : (sameDay(d, yest) ? '昨天' : (d.getMonth() + 1) + '月' + d.getDate() + '日')
+          }
+          if (label) kids.push(el('div', { key: 'g' + dayKey, className: 'xq-news-group' }, label))
+          kids.push(el('div', { key: String(it.id), className: 'xq-news-item' + (it.mark === 1 ? ' xq-important' : '') }, [
             el('div', { key: 't' }, it.text),
             el('div', { key: 'm', className: 'xq-news-time' }, fmtTime(it.created_at) + (it.mark === 1 ? ' · 重要' : ''))
-          ])
+          ]))
         })
         // 滚动到底自动加载；手动入口兜底（滚轮惯性/触控板场景）
         kids.push(el('div', {
@@ -941,7 +992,7 @@ exports.default = {
         }, newsMore ? '加载中…' : (newsNoMore ? '没有更早的快讯了' : '加载更早 ↑')))
         return news.length
           ? el('div', {
-              className: 'xq-news',
+              className: 'xq-news xq-news-tl',
               onScroll: function (e) {
                 const n = e.target
                 if (n.scrollTop + n.clientHeight >= n.scrollHeight - 40) loadMoreNews()
@@ -963,7 +1014,8 @@ exports.default = {
         content = NewsTab()
       }
 
-      return el('div', null, [tabs, errBox, content])
+      // key 变化触发 xq-fade-in 重放：tab/详情切换有轻微淡入
+      return el('div', null, [tabs, errBox, el('div', { key: 'v-' + (view ? 'd' : tab), className: 'xq-view' }, content)])
     }
 
     // ---------- 嵌入式主面板（conversation.input.dock）：输入框上方一整行 ----------
@@ -1069,6 +1121,41 @@ exports.default = {
       const [idx, setIdx] = React.useState([])
       const [mOpen, setMOpen] = React.useState(true)
       const [, force] = React.useState(0)
+      // hover 预览：延迟出现，拖拽/点击不误触；数据 30s 内复用
+      const [pop, setPop] = React.useState(null)   // { quotes: [], at: ts }
+      const hoverTimer = React.useRef(null)
+      const popCache = React.useRef({ at: 0, list: [] })
+
+      function loadPop() {
+        const now = Date.now()
+        if (now - popCache.current.at < 30000 && popCache.current.list.length) {
+          setPop({ quotes: popCache.current.list, at: popCache.current.at })
+          return
+        }
+        // 两次 RPC（watchlist + quotes），走既有节流管线
+        call('watchlist.get', {}).then(function (wl) {
+          const symbols = (wl && wl.symbols) || []
+          if (!symbols.length) { setPop({ quotes: [], at: now }); return }
+          return call('quote', { symbols: symbols }).then(function (data) {
+            const list = (data && data.list) || []
+            popCache.current = { at: now, list: list }
+            setPop({ quotes: list, at: now })
+          })
+        }).catch(function () { /* 静默 */ })
+      }
+      function onEnter() {
+        if (hoverTimer.current) return
+        hoverTimer.current = setTimeout(function () {
+          hoverTimer.current = null
+          if (!badgeDrag) loadPop()
+        }, 300)
+      }
+      function onLeave() {
+        if (hoverTimer.current) { clearTimeout(hoverTimer.current); hoverTimer.current = null }
+        setPop(null)
+      }
+      React.useEffect(function () { return function () { if (hoverTimer.current) clearTimeout(hoverTimer.current) } }, [])
+
       React.useEffect(function () {
         let alive = true
         function refresh() {
@@ -1132,11 +1219,37 @@ exports.default = {
       const style = ui.badgePos
         ? { left: ui.badgePos.x, top: ui.badgePos.y, right: 'auto', bottom: 'auto' }
         : null
-      return el('div', {
+      // hover 预览弹层：跟随徽章位置（有拖拽坐标用之，否则用默认右下角），显示在徽章上方
+      let popStyle = null
+      if (ui.badgePos) {
+        popStyle = { left: Math.max(6, ui.badgePos.x - 60), top: Math.max(6, ui.badgePos.y - 210), right: 'auto', bottom: 'auto' }
+      } else {
+        popStyle = { right: 16, bottom: 104, left: 'auto', top: 'auto' }
+      }
+      let popEl = null
+      if (pop) {
+        const rows = pop.quotes.slice(0, 8).map(function (q) {
+          return el('div', {
+            key: q.symbol, className: 'xq-bp-row', title: '点击查看详情',
+            onClick: function (e) { e.stopPropagation(); setPop(null); ui.set({ open: true }) }
+          }, [
+            el('span', { key: 'n', className: 'xq-bp-name' }, q.name || q.symbol),
+            el('span', { key: 'v', className: 'xq-bp-val ' + colorOf(q.percent) }, fmt(q.current)),
+            el('span', { key: 'p', className: 'xq-pct-chip ' + colorOf(q.percent) }, fmtPct(q.percent))
+          ])
+        })
+        popEl = el('div', { key: 'pop', className: 'xq-badge-pop', style: popStyle, onMouseEnter: onEnter, onMouseLeave: onLeave }, [
+          el('div', { key: 'hd', className: 'xq-badge-pop-hd' }, [el('span', { key: 't' }, '自选 · ' + pop.quotes.length + ' 只'), el('span', { key: 'h' }, '悬停查看 · 点击展开')]),
+          rows.length ? rows : el('div', { key: 'e', className: 'xq-muted' }, '自选为空')
+        ])
+      }
+
+      const badgeEl = el('div', {
         className: 'xq-badge',
         style: style,
-        title: '点击开合行情面板 · 拖动调整位置',
-        onPointerDown: onDown, onPointerMove: onMove, onPointerUp: onUp, onPointerCancel: onUp
+        title: '点击开合行情面板 · 拖动调整位置 · 悬停速览自选',
+        onPointerDown: onDown, onPointerMove: onMove, onPointerUp: onUp, onPointerCancel: onUp,
+        onMouseEnter: onEnter, onMouseLeave: onLeave
       }, [
         el('span', { key: 'logo' }, [el('b', { key: 'b' }, '雪球'), 'mini']),
         el('span', { key: 'st', className: 'xq-status' + (aSession() === '盘中' ? ' xq-live' : ''), title: sessionsText() }, (function () { var s = aSession(); return s === '盘中' ? '● 盘中' : (s || (mOpen ? '● 盘中' : '休市')) })()),
@@ -1151,6 +1264,8 @@ exports.default = {
         ]) : null,
         el('span', { key: 'ct', className: 'xq-caret' }, ui.open ? '▾' : '▴')
       ])
+      // 徽章 + 弹层同层渲染（都为 fixed 定位，互不嵌套，拖拽事件不穿透到弹层）
+      return el('div', { style: { contents: 'display' } }, popEl ? [badgeEl, popEl] : [badgeEl])
     }
 
     // ---------- 底部指数条（会话页，输入框下方氛围行） ----------

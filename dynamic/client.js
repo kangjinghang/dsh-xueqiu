@@ -62,6 +62,8 @@ return {
       '.xq-news-item{font-size:12.5px;padding:6px 8px;background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);border-radius:7px;}\n' +
       '.xq-news-item.xq-important{border-left:3px solid var(--dsw-alias-state-warn-primary);}\n' +
       '.xq-news-time{font-size:10.5px;color:var(--dsw-alias-label-secondary);margin-top:3px;}\n' +
+      '.xq-news-more{font-size:11.5px;color:var(--dsw-alias-label-secondary);text-align:center;padding:6px 0 2px;cursor:pointer;user-select:none;}\n' +
+      '.xq-news-more:hover{color:var(--dsw-alias-label-primary);}\n' +
       '.xq-detail-head{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;}\n' +
       '.xq-detail-name{font-size:15px;font-weight:700;}\n' +
       '.xq-detail-code{font-size:11px;color:var(--dsw-alias-label-secondary);}\n' +
@@ -461,6 +463,8 @@ return {
       const [hot, setHot] = React.useState([])
       const [hotMarket, setHotMarket] = React.useState('cn')
       const [news, setNews] = React.useState([])
+      const [newsMore, setNewsMore] = React.useState(false)   // 翻页加载中
+      const [newsNoMore, setNewsNoMore] = React.useState(false) // 已到最旧
       const [searchQ, setSearchQ] = React.useState('')
       const [searchMode, setSearchMode] = React.useState('stock')
       const [searchRes, setSearchRes] = React.useState([])
@@ -505,9 +509,29 @@ return {
         ]).then(function (res) {
           setHot((res[0] && res[0].list) || [])
           setNews((res[1] && res[1].items) || [])
+          setNewsMore(false)
+          setNewsNoMore(false)
           setErr('')
         }).catch(function (e) {
           setErr(String((e && e.message) || e))
+        })
+      }
+
+      // 快讯翻页：max_id = 当前最旧一条 id，返回严格更早的记录
+      function loadMoreNews() {
+        if (newsMore || newsNoMore || !news.length) return
+        const maxId = news[news.length - 1].id
+        setNewsMore(true)
+        call('news', { count: 20, max_id: maxId }).then(function (res) {
+          const items = (res && res.items) || []
+          const seen = {}
+          news.forEach(function (it) { seen[it.id] = true })
+          const fresh = items.filter(function (it) { return !seen[it.id] })
+          if (!fresh.length) setNewsNoMore(true)
+          else setNews(news.concat(fresh))
+          setNewsMore(false)
+        }).catch(function () {
+          setNewsMore(false)
         })
       }
 
@@ -868,8 +892,20 @@ return {
             el('div', { key: 'm', className: 'xq-news-time' }, fmtTime(it.created_at) + (it.mark === 1 ? ' · 重要' : ''))
           ])
         })
+        // 滚动到底自动加载；手动入口兜底（滚轮惯性/触控板场景）
+        kids.push(el('div', {
+          key: 'more',
+          className: 'xq-news-more',
+          onClick: function () { loadMoreNews() }
+        }, newsMore ? '加载中…' : (newsNoMore ? '没有更早的快讯了' : '加载更早 ↑')))
         return news.length
-          ? el('div', { className: 'xq-news' }, kids)
+          ? el('div', {
+              className: 'xq-news',
+              onScroll: function (e) {
+                const n = e.target
+                if (n.scrollTop + n.clientHeight >= n.scrollHeight - 40) loadMoreNews()
+              }
+            }, kids)
           : el('div', { className: 'xq-muted' }, '暂无快讯')
       }
 

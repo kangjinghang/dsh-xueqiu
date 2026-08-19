@@ -1118,7 +1118,14 @@ return {
           if (d && d.tab) ui.set({ tab: d.tab })
           if (d && typeof d.open === 'boolean') ui.set({ open: d.open })
           if (d && d.badgePos && isFinite(Number(d.badgePos.x)) && isFinite(Number(d.badgePos.y))) {
-            ui.set({ badgePos: { x: Number(d.badgePos.x), y: Number(d.badgePos.y) } })
+            // 恢复位置时钳制到当前视口内（视口缩小/分辨率变化后防止徽章落到屏幕外）
+            const vp = viewport()
+            const maxX = (vp ? vp.w : 1200) - 140
+            const maxY = (vp ? vp.h : 800) - 60
+            ui.set({ badgePos: {
+              x: Math.min(Math.max(4, Number(d.badgePos.x)), Math.max(4, maxX)),
+              y: Math.min(Math.max(4, Number(d.badgePos.y)), Math.max(4, maxY))
+            } })
           }
           if (d && typeof d.dockH === 'number' && isFinite(d.dockH)) {
             ui.set({ dockH: d.dockH })

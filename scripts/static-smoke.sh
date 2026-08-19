@@ -48,10 +48,11 @@ fi
 
 # ---- 1. 安装 ----
 say "-- 1/7 安装 (dsh plugin add)"
-if (cd "$TMP" && DSH_HOME="$TMP" "$DSH_BIN" plugin --profile web add "$PLUGIN_DIR" >/dev/null 2>&1); then
+if (cd "$TMP" && DSH_HOME="$TMP" "$DSH_BIN" plugin --profile web add "$PLUGIN_DIR" >"$TMP/install.log" 2>&1); then
   pass "安装成功"
 else
   fail "安装失败 — 用户第一步就走不通"
+  tail -8 "$TMP/install.log" 2>/dev/null | sed 's/^/     /'
   exit 1
 fi
 

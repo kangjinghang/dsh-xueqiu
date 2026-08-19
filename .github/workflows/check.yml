@@ -14,8 +14,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install dsh CLI
-        run: npm i -g @deepseek-ai/dsh
+      - name: Install dsh CLI + pnpm
+        run: npm i -g @deepseek-ai/dsh pnpm
       - name: Source sync + syntax gates
         run: |
           python3 scripts/gen-static.py --check

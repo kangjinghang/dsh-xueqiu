@@ -25,3 +25,4 @@ jobs:
         run: bash scripts/static-smoke.sh
         env:
           SMOKE_PORT: 3199
+          SMOKE_CI: 1

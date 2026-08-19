@@ -441,7 +441,7 @@ return {
           const text = await fs.readText(target)
           const parsed = JSON.parse(text)
           if (parsed && Array.isArray(parsed.symbols) && parsed.symbols.length) {
-            watchlist = { symbols: parsed.symbols.slice(0, 50) }
+            watchlist = { symbols: parsed.symbols.slice(0, 200) }
           }
         } catch (e) { /* 首次运行或无写权限时使用默认列表 */ }
       }
@@ -561,13 +561,24 @@ return {
     }
 
     // 云端自选股：默认组合 pid 探测 + 股票列表（端点来自 pysnowball api_ref）
+    // 真实账号的默认自选在 stocks 系统分类里（负数 pid，「全部」id=-1 含沪深/港/美股全部），
+    // portfolios 字段仅在老接口形态/个人组合账号出现，作为回退。
+    function pickCloudPid(data) {
+      const cats = data.stocks || []
+      for (let i = 0; i < cats.length; i++) {
+        const c = cats[i]
+        if (c && (c.name === '全部' || c.id === -1) && (c.pid || c.id)) return c.pid || c.id
+      }
+      if (cats.length && (cats[0].pid || cats[0].id)) return cats[0].pid || cats[0].id
+      const portfolios = data.portfolios || []
+      const def = portfolios[0] || null
+      return def ? (def.pid || def.id || def.portfolio_id || null) : null
+    }
+
     async function fetchCloudWatchlist() {
       const plist = await getJSON('/v5/stock/portfolio/list.json', { system: 'true' }, {})
       const data = (plist && plist.data) || plist || {}
-      const portfolios = data.portfolios || []
-      const def = portfolios[0] || null
-      const pid = def ? (def.pid || def.id || def.portfolio_id) : null
-      if (def && !pid && def.portfolio_id) return { pid: null, symbols: [] }
+      const pid = pickCloudPid(data)
       if (!pid) return { pid: null, symbols: [] }
       cloudPid = pid
       const s = await getJSON('/v5/stock/portfolio/stock/list.json', { size: 200, category: 1, pid: pid }, {})
@@ -647,7 +658,7 @@ return {
       try {
         const cloud = await fetchCloudWatchlist()
         if (cloud.symbols && cloud.symbols.length) {
-          watchlist = { symbols: cloud.symbols.slice(0, 50) }
+          watchlist = { symbols: cloud.symbols.slice(0, 200) }
           await saveWatchlist()
           symbols = watchlist.symbols
         }
@@ -667,7 +678,7 @@ return {
       if (!lg) throw new Error('未登录：请先在「账号」中粘贴 Cookie 登录')
       const cloud = await fetchCloudWatchlist()
       if (cloud.symbols.length) {
-        watchlist = { symbols: cloud.symbols.slice(0, 50) }
+        watchlist = { symbols: cloud.symbols.slice(0, 200) }
         await saveWatchlist()
       }
       return { symbols: (watchlist || {}).symbols || [] }

@@ -1228,6 +1228,8 @@ exports.default = {
     // ---------- 迷你悬浮徽章（shell.overlay）：可拖动，点击开合面板 ----------
     function MiniBadge() {
       const [idx, setIdx] = React.useState([])
+      // 徽章主体行情：优先自选股前 2 只；自选为空回退指数（上证+深成指）
+      const [top, setTop] = React.useState([])
       const [mOpen, setMOpen] = React.useState(true)
       const [, force] = React.useState(0)
       // hover 预览：延迟出现，拖拽/点击不误触；数据 30s 内复用
@@ -1275,6 +1277,15 @@ exports.default = {
             const st = data ? data.status : null
             setMOpen(st === 5 || st === 6)
           }).catch(function () { /* 静默失败 */ })
+          // 徽章主体：自选股前 2 只实时价（自选为空时主体回退指数）
+          call('watchlist.get', {}).then(function (wl) {
+            if (!alive) return
+            const symbols = ((wl && wl.symbols) || []).slice(0, 2)
+            if (!symbols.length) { setTop([]); return }
+            return call('quote', { symbols: symbols }).then(function (data) {
+              if (alive) setTop((data && data.list) || [])
+            })
+          }).catch(function () { /* 静默失败：保留指数 */ })
         }
         function onVis() { if (!pageHidden()) refresh() }
         refresh()
@@ -1325,6 +1336,25 @@ exports.default = {
       }
 
       const sh = idx[0], sz = idx[1]
+      // 徽章主体行情项：自选前 2 只优先；无自选回退 上证（价+幅）/深成指（幅）
+      const bodyEls = top.length
+        ? top.map(function (q) {
+            return el('span', { key: 'w-' + q.symbol, title: (q.name || q.symbol) + ' ' + fmt(q.current) }, [
+              el('span', { key: 'n', className: 'xq-badge-hint' }, (q.name || q.symbol) + ' '),
+              el('span', { key: 'p', className: 'xq-badge-val ' + colorOf(q.percent) }, fmtPct(q.percent))
+            ])
+          })
+        : [
+            sh ? el('span', { key: 'sh' }, [
+              el('span', { key: 'n', className: 'xq-badge-hint' }, sh.name + ' '),
+              el('span', { key: 'v', className: 'xq-badge-val ' + colorOf(sh.percent) }, fmt(sh.current)),
+              el('span', { key: 'p', className: colorOf(sh.percent) }, ' ' + fmtPct(sh.percent))
+            ]) : null,
+            sz ? el('span', { key: 'sz' }, [
+              el('span', { key: 'n', className: 'xq-badge-hint' }, ' 深成指 '),
+              el('span', { key: 'p', className: colorOf(sz.percent) }, fmtPct(sz.percent))
+            ]) : null
+          ]
       const style = ui.badgePos
         ? { left: ui.badgePos.x, top: ui.badgePos.y, right: 'auto', bottom: 'auto' }
         : null
@@ -1362,17 +1392,9 @@ exports.default = {
       }, [
         el('span', { key: 'logo' }, [el('b', { key: 'b' }, '雪球'), 'mini']),
         el('span', { key: 'st', className: 'xq-status' + (aSession() === '盘中' ? ' xq-live' : ''), title: sessionsText() }, (function () { var s = aSession(); return s === '盘中' ? '● 盘中' : (s || (mOpen ? '● 盘中' : '休市')) })()),
-        sh ? el('span', { key: 'sh' }, [
-          el('span', { key: 'n', className: 'xq-badge-hint' }, sh.name + ' '),
-          el('span', { key: 'v', className: 'xq-badge-val ' + colorOf(sh.percent) }, fmt(sh.current)),
-          el('span', { key: 'p', className: colorOf(sh.percent) }, ' ' + fmtPct(sh.percent))
-        ]) : null,
-        sz ? el('span', { key: 'sz' }, [
-          el('span', { key: 'n', className: 'xq-badge-hint' }, ' 深成指 '),
-          el('span', { key: 'p', className: colorOf(sz.percent) }, fmtPct(sz.percent))
-        ]) : null,
+      ].concat(bodyEls).concat([
         el('span', { key: 'ct', className: 'xq-caret' }, ui.open ? '▾' : '▴')
-      ])
+      ]))
       // 徽章 + 弹层同层渲染（都为 fixed 定位，互不嵌套，拖拽事件不穿透到弹层）
       return el('div', { style: { contents: 'display' } }, popEl ? [badgeEl, popEl] : [badgeEl])
     }

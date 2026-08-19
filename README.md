@@ -2,9 +2,26 @@
 
 > DeepSeek Harness 上的雪球行情面板：**免登录**查看 A股/港股/美股实时行情、K线、分时、热榜、搜索、7×24 快讯与热议用户。面板嵌入输入框上方不遮挡对话，迷你徽章常驻实时指数，交易时段智能刷新。
 
-![badge](https://img.shields.io/badge/dsh-plugin-xueqiu-1DA1F2)
-![badge](https://img.shields.io/badge/platform-web-blue)
-![license](https://img.shields.io/badge/license-MIT-green)
+[![npm version](https://img.shields.io/npm/v/dsh-xueqiu?style=flat-square&label=npm)](https://www.npmjs.com/package/dsh-xueqiu)
+[![npm downloads](https://img.shields.io/npm/dm/dsh-xueqiu?style=flat-square)](https://www.npmjs.com/package/dsh-xueqiu)
+[![GitHub stars](https://img.shields.io/github/stars/kangjinghang/dsh-xueqiu?style=flat-square)](https://github.com/kangjinghang/dsh-xueqiu/stargazers)
+[![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](./LICENSE)
+[![dsh-plugin](https://img.shields.io/badge/dsh-plugin-xueqiu-1DA1F2?style=flat-square)](#-安装)
+
+中文 | [English](./README.en.md)
+
+**[功能](#-功能) · [截图](#-截图) · [安装](#-安装) · [使用](#️-使用) · [稳定性](#-稳定性设计) · [FAQ](#-faq) · [更新日志](#-更新日志)**
+
+## 🆚 与同类行情插件
+
+| 能力 | dsh-xueqiu | 股票皮肤类插件 |
+| --- | --- | --- |
+| 面板形态 | 嵌入输入框上方，不遮挡对话 | 全局换肤/状态栏 |
+| K线/分时 | 蜡烛图+均线+十字光标，7 档周期 | 部分有 |
+| 热榜/快讯/KOL | 全有 | 多数无 |
+| 数据源 | 雪球（社区数据：帖子/热议用户独有） | 腾讯/Yahoo 等 |
+| 请求防护 | 闸门+看门狗+缓存+自愈+隐藏暂停 | 一般仅缓存 |
+| 主题 | 跟随 DSH 明暗 | 需整体换肤 |
 
 ## ✨ 功能
 
@@ -105,6 +122,26 @@ dsh-xueqiu/
 ├── package.json          # bundle 声明（dsh.bundle / dsh.client）
 └── cordis.patch.yml      # bundle 层插入
 ```
+
+## ❓ FAQ
+
+**Q: 安装后面板不出现？**
+按安装说明重启一次 `dsh web`（插件行按启动缓存发现），再硬刷新页面（Ctrl/Cmd+Shift+R）。仍无面板时看右下角有无迷你徽章——徽章在则点徽章展开。
+
+**Q: 行情数据突然全空/报错？**
+雪球匿名 cookie 偶发被风控（错误码 400016 或空响应）。插件会自动重播种 cookie 并重试；连续失败时等 1–2 分钟再点「刷新」，或收起面板降低请求频率。
+
+**Q: K线周期里分时下为什么没有周期按钮？**
+分时模式只展示当日分钟线，K线模式才有 7 档周期，属设计行为。
+
+**Q: 交易时段提示节假日准吗？**
+不准。时段按每周一至周五的固定钟点本地推算，不含法定节假日调休，仅供参考。
+
+**Q: 自选股和面板设置存在哪？**
+宿主本地文件 `~/.xueqiu-watchlist.json` 与 `~/.xueqiu-ui-state.json`，与浏览器 localStorage 无关，换浏览器不丢。
+
+**Q: 会不会影响 DSH 本体？**
+插件 UI 全部挂在官方槽位（`conversation.input.dock` / `shell.overlay` / `conversation.composer.dock`），卸载即完全消失，不改 DSH 源码。
 
 ## ⚠️ 免责声明
 

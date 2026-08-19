@@ -542,19 +542,53 @@ export default {
       }
     }
 
-    ctx.effect(function () {
-      return harness.handle('xq.call', async function (req) {
-        const reqObj = (req && typeof req === 'object') ? req : {}
-        const action = reqObj.action
-        const args = reqObj.args || {}
-        if (!dispatch[action]) return { ok: false, error: '未知操作: ' + action }
-        try {
-          const data = await dispatch[action](args)
-          return { ok: true, data: sanitize(data) }
-        } catch (e) {
-          return { ok: false, error: String((e && e.message) || e) }
-        }
+    async function handleCall (req) {
+      const reqObj = (req && typeof req === 'object') ? req : {}
+      const action = reqObj.action
+      const args = reqObj.args || {}
+      if (!dispatch[action]) return { ok: false, error: '未知操作: ' + action }
+      try {
+        const data = await dispatch[action](args)
+        return { ok: true, data: sanitize(data) }
+      } catch (e) {
+        return { ok: false, error: String((e && e.message) || e) }
+      }
+    }
+
+    // 动态插件运行时提供 harness 门面；静态安装（bundle layer）没有，
+    // 改走 webServer 前缀路由，client 用同源 fetch 调 /xq-rpc。
+    if (typeof harness !== 'undefined') {
+      ctx.effect(function () {
+        return harness.handle('xq.call', handleCall)
       })
-    })
+    } else {
+      ctx.inject(['webServer'], function (webCtx) {
+        webCtx.effect(function () {
+          return webCtx.webServer.register({
+          kind: 'prefix',
+          path: '/xq-rpc',
+          handler: async function (req, res) {
+            // 同源栅栏：Host 头必须是回环，带 Origin 时必须同源（防 DNS rebinding/CSRF）
+            const hostHeader = String(req.headers.host || '')
+            const origin = req.headers.origin ? String(req.headers.origin) : ''
+            const hostAuth = hostHeader.replace(/:\d+$/, '')
+            const loopback = hostAuth === '127.0.0.1' || hostAuth === 'localhost' || hostAuth === '[::1]' || hostAuth === '::1'
+            if (!loopback) { res.writeHead(403); res.end('forbidden'); return }
+            if (origin && origin !== 'http://' + hostHeader && origin !== 'https://' + hostHeader) {
+              res.writeHead(403); res.end('forbidden'); return
+            }
+            const chunks = []
+            for await (const c of req) chunks.push(c)
+            let body = {}
+            try { body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') } catch (e) { body = {} }
+            const result = await handleCall(body)
+            const text = JSON.stringify(result)
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
+            res.end(text)
+          }
+          })
+        })
+      })
+    }
   }
 }

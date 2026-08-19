@@ -171,6 +171,36 @@ return {
       return null
     }
 
+    function pageHidden() {
+      try { return typeof document !== 'undefined' && document.hidden } catch (e) { return false }
+    }
+
+    // 交易时段：本地 Intl 时区判定（不含节假日，仅供参考）
+    // segs: [[开盘分,收盘分],...]；lunch: [午休起,午休止]（可选）
+    function sessionState(tz, segs, lunch) {
+      try {
+        var now = new Date()
+        var f = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour12: false, weekday: 'short', hour: '2-digit', minute: '2-digit' })
+        var p = {}
+        f.formatToParts(now).forEach(function (x) { p[x.type] = x.value })
+        if (p.weekday === 'Sat' || p.weekday === 'Sun') return '休市'
+        var h = parseInt(p.hour, 10) % 24
+        var cur = h * 60 + parseInt(p.minute, 10)
+        var inSess = segs.some(function (s) { return cur >= s[0] && cur < s[1] })
+        if (inSess) return '盘中'
+        if (lunch && cur >= lunch[0] && cur < lunch[1]) return '午休'
+        return cur < segs[0][0] ? '盘前' : '休市'
+      } catch (e) { return '' }
+    }
+    function aSession() { return sessionState('Asia/Shanghai', [[570, 690], [780, 900]], [690, 780]) }
+    function hkSession() { return sessionState('Asia/Hong_Kong', [[570, 720], [780, 960]], [720, 780]) }
+    function usSession() { return sessionState('America/New_York', [[570, 960]], null) }
+    function sessionsText() {
+      var a = aSession(), hk = hkSession(), us = usSession()
+      if (!a && !hk && !us) return ''
+      return [a && 'A股' + a, hk && '港股' + hk, us && '美股' + us].filter(Boolean).join(' · ')
+    }
+
     // ---------- 共享 UI 状态：面板开合 / 当前标签 / 徽章位置 ----------
     const ui = {
       open: false, tab: 'market', badgePos: null, dockH: null, hydrated: false,
@@ -492,9 +522,17 @@ return {
       React.useEffect(function () {
         const marketMs = marketOpen ? 20000 : 60000
         const contentMs = marketOpen ? 60000 : 180000
-        const stopA = ctx.interval(function () { refreshMarket() }, marketMs)
-        const stopB = ctx.interval(function () { refreshContent() }, contentMs)
-        return function () { if (stopA) stopA(); if (stopB) stopB() }
+        // 页面隐藏时暂停轮询（省请求、降低风控概率），回到前台立即刷新一次
+        const stopA = ctx.interval(function () { if (!pageHidden()) refreshMarket() }, marketMs)
+        const stopB = ctx.interval(function () { if (!pageHidden()) refreshContent() }, contentMs)
+        function onVis() {
+          if (!pageHidden()) { refreshMarket(); refreshContent() }
+        }
+        try { document.addEventListener('visibilitychange', onVis) } catch (e) { /* ignore */ }
+        return function () {
+          if (stopA) stopA(); if (stopB) stopB()
+          try { document.removeEventListener('visibilitychange', onVis) } catch (e) { /* ignore */ }
+        }
       }, [marketOpen])
 
       React.useEffect(function () {
@@ -879,9 +917,15 @@ return {
 
     function DockPanel() {
       const [, force] = React.useState(0)
+      const [tick, setTick] = React.useState(0)
       React.useEffect(function () {
         const off = ui.subscribe(function () { if (ui.hydrated) saveUi(); force(function (x) { return x + 1 }) })
         return off
+      }, [])
+      // 每分钟重算一次交易时段提示
+      React.useEffect(function () {
+        const stop = ctx.interval(function () { setTick(function (x) { return x + 1 }) }, 60000)
+        return function () { if (stop) stop() }
       }, [])
       function onDown(e) {
         if (e.pointerType === 'mouse' && e.button !== 0) return
@@ -927,7 +971,7 @@ return {
       return el('div', { className: 'xq-dock' }, [
         el('div', { key: 'head', className: 'xq-dock-head' }, [
           el('span', { key: 'logo', className: 'xq-logo' }, [el('b', { key: 'b' }, '雪球'), ' mini']),
-          el('span', { key: 'st', className: 'xq-status' }, '行情面板'),
+          el('span', { key: 'st', className: 'xq-status', title: 'A股/港股/美股交易时段（本地时区推算，不含节假日）' }, sessionsText() || '行情面板'),
           el('span', { key: 'hint', className: 'xq-update' }, '已嵌入输入框上方 · Esc 收起'),
           el('span', { key: 'sp', className: 'xq-spacer' }),
           el('button', { key: 'min', className: 'xq-btn-mini', title: '收起（点右下角徽章重新打开）', onClick: function () { ui.set({ open: false }) } }, '收起 —')
@@ -951,6 +995,7 @@ return {
       React.useEffect(function () {
         let alive = true
         function refresh() {
+          if (pageHidden()) return   // 页面隐藏时暂停徽章轮询
           call('quote', { symbols: ['SH000001', 'SZ399001'] }).then(function (data) {
             if (!alive) return
             setIdx((data && data.list) || [])
@@ -958,10 +1003,15 @@ return {
             setMOpen(st === 5 || st === 6)
           }).catch(function () { /* 静默失败 */ })
         }
+        function onVis() { if (!pageHidden()) refresh() }
         refresh()
         const stop = ctx.interval(refresh, 30000)
         const off = ui.subscribe(function () { force(function (x) { return x + 1 }) })
-        return function () { alive = false; if (stop) stop(); off() }
+        try { document.addEventListener('visibilitychange', onVis) } catch (e) { /* ignore */ }
+        return function () {
+          alive = false; if (stop) stop(); off()
+          try { document.removeEventListener('visibilitychange', onVis) } catch (e) { /* ignore */ }
+        }
       }, [])
 
       function onDown(e) {
@@ -1012,7 +1062,7 @@ return {
         onPointerDown: onDown, onPointerMove: onMove, onPointerUp: onUp, onPointerCancel: onUp
       }, [
         el('span', { key: 'logo' }, [el('b', { key: 'b' }, '雪球'), 'mini']),
-        el('span', { key: 'st', className: 'xq-status' + (mOpen ? ' xq-live' : '') }, mOpen ? '● 盘中' : '休市'),
+        el('span', { key: 'st', className: 'xq-status' + (aSession() === '盘中' ? ' xq-live' : ''), title: sessionsText() }, (function () { var s = aSession(); return s === '盘中' ? '● 盘中' : (s || (mOpen ? '● 盘中' : '休市')) })()),
         sh ? el('span', { key: 'sh' }, [
           el('span', { key: 'n', className: 'xq-badge-hint' }, sh.name + ' '),
           el('span', { key: 'v', className: 'xq-badge-val ' + colorOf(sh.percent) }, fmt(sh.current)),
@@ -1032,13 +1082,19 @@ return {
       React.useEffect(function () {
         let alive = true
         function refresh() {
+          if (pageHidden()) return   // 页面隐藏时暂停指数条轮询
           call('quote', { symbols: ['SH000001', 'SZ399001', 'SZ399006', 'SH000300'] }).then(function (data) {
             if (alive) setIndices((data && data.list) || [])
           }).catch(function () { /* 静默失败 */ })
         }
+        function onVis() { if (!pageHidden()) refresh() }
         refresh()
         const stop = ctx.interval(refresh, 30000)
-        return function () { alive = false; if (stop) stop() }
+        try { document.addEventListener('visibilitychange', onVis) } catch (e) { /* ignore */ }
+        return function () {
+          alive = false; if (stop) stop()
+          try { document.removeEventListener('visibilitychange', onVis) } catch (e) { /* ignore */ }
+        }
       }, [])
       if (!indices.length) return null
       const kids = indices.map(function (q) {

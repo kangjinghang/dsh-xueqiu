@@ -46,5 +46,10 @@
     "cordis.patch.yml",
     "README.md",
     "LICENSE"
-  ]
+  ],
+  "scripts": {
+    "generate": "python3 scripts/gen-static.py",
+    "check": "python3 scripts/gen-static.py --check && node --check src/index.js && node --check src/client/index.js && node -e \"new Function(require('fs').readFileSync('dynamic/host.js','utf8'))\" && node -e \"new Function(require('fs').readFileSync('dynamic/client.js','utf8'))\" && bash scripts/static-smoke.sh",
+    "prepublishOnly": "npm run check"
+  }
 }

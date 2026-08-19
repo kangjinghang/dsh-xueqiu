@@ -1,5 +1,5 @@
+// 由 scripts/gen-static.py 从 dynamic/client.js 生成 —— 勿手改；改 dynamic/ 后重新生成。
 // 静态 bundle 格式：classic script 注册到 __ModuleLoader__，factory 为 CJS 形式。
-// 由 dynamic/client.js 机械转换生成 —— 修改请先改 dynamic/ 再重新转换。
 window.__ModuleLoader__.load({
   id: 'dsh-xueqiu',
   factory: function (require) {
@@ -7,7 +7,7 @@ window.__ModuleLoader__.load({
     var exports = module.exports
     const React = require('react')
 
-    // 动态运行时的 styles.insert 替代：自管 <style> 标签，随插件停用移除
+    // 动态运行时 styles.insert 的替代：自管 <style> 标签（随插件停用移除交给卸载流程）
     let _styleTag = null
     function insertStyle (css) {
       if (typeof document === 'undefined' || !document.head) return

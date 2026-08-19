@@ -1,7 +1,26 @@
-return {
+// 静态 bundle 格式：classic script 注册到 __ModuleLoader__，factory 为 CJS 形式。
+// 由 dynamic/client.js 机械转换生成 —— 修改请先改 dynamic/ 再重新转换。
+window.__ModuleLoader__.load({
+  id: 'dsh-xueqiu',
+  factory: function (require) {
+    var module = { exports: {} }
+    var exports = module.exports
+    const React = require('react')
+
+    // 动态运行时的 styles.insert 替代：自管 <style> 标签，随插件停用移除
+    let _styleTag = null
+    function insertStyle (css) {
+      if (typeof document === 'undefined' || !document.head) return
+      _styleTag = document.createElement('style')
+      _styleTag.setAttribute('data-plugin', 'dsh-xueqiu')
+      _styleTag.textContent = css
+      document.head.appendChild(_styleTag)
+    }
+
+exports.default = {
   inject: ['timer'],
   apply(ctx) {
-    styles.insert('\n' +
+    insertStyle('\n' +
       '.xq-dock{background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-radius:10px;overflow:hidden;font-size:13px;line-height:1.45;color:var(--dsw-alias-label-primary);margin-bottom:6px;}\n' +
       '.xq-dock *{box-sizing:border-box;}\n' +
       '.xq-dock-head{display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid var(--dsw-alias-border-l1);}\n' +
@@ -104,7 +123,7 @@ return {
     function el(type, props, children) { return React.createElement(type, props, children) }
 
     async function call(action, args) {
-      const r = await host.call('xq.call', { action: action, args: args || {} })
+      const r = await fetch('/xq-rpc', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: action, args: args || {} }) }).then(function (res) { return res.json() })
       if (!r || !r.ok) throw new Error((r && r.error) || '调用失败')
       return r.data
     }
@@ -1131,3 +1150,6 @@ return {
 
   }
 }
+    return module.exports
+  }
+})

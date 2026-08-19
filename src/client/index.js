@@ -1363,11 +1363,11 @@ exports.default = {
               el('span', { key: 'p', className: colorOf(sz.percent) }, fmtPct(sz.percent))
             ]) : null
           ]
-      const style = ui.badgePos
+      let style = ui.badgePos
         ? { left: ui.badgePos.x, top: ui.badgePos.y, right: 'auto', bottom: 'auto' }
         : null
       if (wide) {
-        ;(style = style || {})
+        if (!style) { style = {} }
         style.maxWidth = effW + 'px'
         style.width = effW + 'px'
       }

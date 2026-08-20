@@ -155,6 +155,8 @@ exports.default = {
       '.xq-periods button,.xq-modes button{font-size:11.5px;border:none;background:none;color:var(--dsw-alias-label-secondary);padding:2px 9px;border-radius:5px;cursor:pointer;}\n' +
       '.xq-periods button.xq-on,.xq-modes button.xq-on{background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);font-weight:600;}\n' +
       '.xq-chart{width:100%;height:auto;display:block;}\n' +
+      '.xq-chart-pan{cursor:crosshair;touch-action:none;}\n' +
+      '.xq-chart-pan:active{cursor:grabbing;}\n' +
       '.xq-chart-wrap{position:relative;}\n' +
       '.xq-tip{position:absolute;top:4px;z-index:5;pointer-events:none;background:var(--dsw-alias-bg-overlay);border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:4px 8px;font-size:10.5px;line-height:1.6;color:var(--dsw-alias-label-primary);box-shadow:0 4px 14px rgba(0,0,0,.28);white-space:nowrap;}\n' +
       '.xq-tip-d{font-weight:700;}\n' +
@@ -331,10 +333,37 @@ exports.default = {
     // 面板高度拖拽引用（实例唯一，避免组件重渲染丢失状态）
     const dockResize = { active: false, startY: 0, startH: 0, h: 0, body: null }
 
-    // ---------- K线蜡烛图（成交量 + 均线 + 十字光标/悬浮详情） ----------
+    // ---------- K线蜡烛图（成交量 + 均线 + 十字光标/悬浮详情 + 滚轮缩放/拖拽平移） ----------
+    // 交互模型（借鉴 dsh-stock-terminal）：
+    //   - rows 为完整缓冲（详情页拉 500 根）；视图窗口 [off, off+cnt) 默认尾部 120 根
+    //   - 滚轮：以鼠标锚点为中心缩放（20~500 根），锚定数据不漂移
+    //   - 拖拽：水平平移窗口，越界钳制；松手后若窗口左缘距缓冲头部 <60 根且还有历史，自动追加拉取
+    //   - 双击：复位为尾部 120 根
     function KlineChart(props) {
-      const rows = props.rows || []
+      const all = props.rows || []
+      const fetchMore = props.onNeedEarlier || null
       const [hi, setHi] = React.useState(null)
+      // 视图窗口状态：off=窗口起点索引（0=最新端），cnt=窗口根数
+      const [win, setWin] = React.useState({ off: 0, cnt: 120 })
+      const winRef = React.useRef(win)
+      winRef.current = win
+      // 数据长度变化（换股/换周期/追加历史）时复位窗口，但追加场景保留用户的窗口位置
+      const lastLenRef = React.useRef(0)
+      const grewRef = React.useRef(false)
+      if (lastLenRef.current !== all.length) {
+        grewRef.current = lastLenRef.current > 0 && all.length > lastLenRef.current
+        lastLenRef.current = all.length
+        if (!grewRef.current) {
+          // 非追加（换股/换周期/首次）：复位为尾部 120
+          if (winRef.current.off !== 0 || winRef.current.cnt !== 120) setWin({ off: 0, cnt: 120 })
+        }
+      }
+      // 钳制窗口到当前缓冲
+      const total = all.length
+      let off = Math.min(Math.max(0, win.off), Math.max(0, total - 5))
+      let cnt = Math.min(Math.max(20, win.cnt), Math.max(20, total))
+      if (off + cnt > total) off = Math.max(0, total - cnt)
+      const rows = all.slice(off, off + cnt)
       if (!rows.length) return el('div', { className: 'xq-muted' }, '暂无K线数据')
       const W = 640, MAIN = 150, VOL = 44, PAD = 6, GAP = 4, LBL = 14
       const H = MAIN + VOL + GAP + PAD + LBL
@@ -397,14 +426,71 @@ exports.default = {
         kids.push(el('rect', { key: 'v' + i, x: x - bw / 2, y: vBottom - vh, width: bw, height: vh, fill: color, opacity: 0.45 }))
       }
       const last = rows[n - 1]
-      function onMove(e) {
-        const rect = e.currentTarget.getBoundingClientRect()
-        if (!rect || !rect.width) return
-        const px = (e.clientX - rect.left) / rect.width * W
+      // ---- 缩放/平移：坐标换算（px→数据索引） ----
+      const pxToIdx = function (px) {
         let i = Math.floor((px - PAD) / step)
         if (i < 0) i = 0
         if (i > n - 1) i = n - 1
-        setHi(i)
+        return i
+      }
+      // 拖拽状态存 ref：off 为拖拽起点时的窗口 off，px0 为起点像素
+      const dragRef = React.useRef(null)
+      function onMove(e) {
+        const rect = e.currentTarget.getBoundingClientRect()
+        if (!rect || !rect.width) return
+        if (dragRef.current) {
+          // 拖拽平移：像素位移换算为根数（step 为 svg 单位，需按显示宽度比例折算）
+          const dispPerData = rect.width / W * step
+          if (dispPerData <= 0) return
+          const moved = Math.round((e.clientX - dragRef.current.px0) / dispPerData)
+          // 向右拖 → 看更早历史 → off 增大
+          let noff = dragRef.current.off0 + moved
+          if (noff < 0) noff = 0
+          const maxOff = Math.max(0, total - Math.min(cnt, total))
+          if (noff > maxOff) noff = maxOff
+          if (noff !== win.off) setWin({ off: noff, cnt: cnt })
+          return
+        }
+        const px = (e.clientX - rect.left) / rect.width * W
+        setHi(pxToIdx(px))
+      }
+      function onDown(e) {
+        const rect = e.currentTarget.getBoundingClientRect()
+        if (!rect || !rect.width) return
+        dragRef.current = { px0: e.clientX, off0: off }
+        setHi(null)
+        e.preventDefault()
+      }
+      function onUp() {
+        if (!dragRef.current) return
+        dragRef.current = null
+        // 距缓冲头部不足 60 根且有拉取通道 → 请求更早历史（host 侧再拉 500 根合并）
+        if (fetchMore && total - (off + cnt) < 60 && total >= 490) {
+          fetchMore(total)
+        }
+      }
+      function onWheel(e) {
+        const rect = e.currentTarget.getBoundingClientRect()
+        if (!rect || !rect.width) return
+        e.preventDefault()
+        e.stopPropagation()
+        const px = (e.clientX - rect.left) / rect.width * W
+        const anchor = pxToIdx(px)           // 锚点在窗口内的索引
+        const anchorData = off + anchor      // 锚点在缓冲中的索引
+        const factor = e.deltaY > 0 ? 1.15 : 1 / 1.15   // 滚轮下=缩小（窗口变大）
+        let ncnt = Math.round(cnt * factor)
+        if (ncnt < 20) ncnt = 20
+        if (ncnt > total) ncnt = total
+        if (ncnt === cnt) return
+        // 保持锚点相对显示位置不动：anchor/oldCnt ≈ (anchorData-noff)/ncnt
+        let noff = Math.round(anchorData - anchor / cnt * ncnt)
+        if (noff < 0) noff = 0
+        if (noff + ncnt > total) noff = Math.max(0, total - ncnt)
+        setWin({ off: noff, cnt: ncnt })
+      }
+      function onDblClick() {
+        dragRef.current = null
+        setWin({ off: 0, cnt: Math.min(120, Math.max(20, total)) })
       }
       let cross = null, tip = null
       if (hi !== null && hi >= 0 && hi < n) {
@@ -449,8 +535,10 @@ exports.default = {
       return el('div', { className: 'xq-chart-wrap' }, [
         tip,
         el('svg', {
-          key: 's', className: 'xq-chart', viewBox: '0 0 ' + W + ' ' + H,
-          onMouseMove: onMove, onMouseLeave: function () { setHi(null) }
+          key: 's', className: 'xq-chart xq-chart-pan', viewBox: '0 0 ' + W + ' ' + H,
+          onMouseMove: onMove, onMouseLeave: function () { dragRef.current = null; setHi(null) },
+          onMouseDown: onDown, onMouseUp: onUp,
+          onWheel: onWheel, onDoubleClick: onDblClick
         }, [
           el('line', { key: 'base', x1: PAD, y1: vTop, x2: W - PAD, y2: vTop, stroke: 'var(--dsw-alias-border-l2)', strokeWidth: 1 }),
           poly(ma5, '#f59e0b'),
@@ -468,7 +556,7 @@ exports.default = {
             el('span', { key: 'm5', style: { color: '#f59e0b' } }, 'MA5'),
             el('span', { key: 'm10', style: { color: '#3b82f6' } }, 'MA10'),
             el('span', { key: 'm20', style: { color: '#a855f7' } }, 'MA20'),
-            el('span', { key: 'n' }, n + ' 根')
+            el('span', { key: 'n' }, cnt + '/' + total + ' 根 · 滚轮缩放 · 拖动平移 · 双击复位')
           ])
         ])
       ])
@@ -687,6 +775,30 @@ exports.default = {
         }
       }, [marketOpen])
 
+      // K线历史追加：拖到缓冲头部时拉更早的 500 根，按 timestamp 去重合并（升序）
+      function fetchEarlierKline(haveCount) {
+        if (!view || !detail || !detail.kline) return
+        const cur = detail.kline.rows || []
+        if (!cur.length) return
+        const earliest = cur[0].timestamp
+        // 以当前最早一根为 begin 的近似：多拉 500 根（count 负值=含 begin 往前），host 侧 type:'before' 返回区间
+        call('kline', { symbol: view, period: klinePeriod, count: 500, begin: earliest }).then(function (res) {
+          const fresh = (res && res.rows) || []
+          if (!fresh.length) return
+          setDetail(function (d) {
+            if (!d || !d.kline) return d
+            const seen = {}
+            d.kline.rows.forEach(function (r) { seen[r.timestamp] = true })
+            const add = fresh.filter(function (r) { return !seen[r.timestamp] })
+            if (!add.length) return d
+            const merged = d.kline.rows.concat(add)
+            merged.sort(function (a, b) { return a.timestamp - b.timestamp })
+            if (merged.length > 3000) merged.splice(0, merged.length - 3000)   // 上限防膨胀
+            return Object.assign({}, d, { kline: { rows: merged } })
+          })
+        }).catch(function () { /* 追加失败静默：窗口仍可看已有缓冲 */ })
+      }
+
       React.useEffect(function () {
         if (!view) { setDetail(null); return }
         let alive = true
@@ -694,7 +806,7 @@ exports.default = {
         function fb(p) { return p.catch(function () { return null }) }
         // 渐进渲染：报价+K线先上屏，分时/财务/KOL 到达后补充，避免等齐才显示
         const pQuote = fb(call('quoteDetail', { symbol: view }))
-        const pKline = fb(call('kline', { symbol: view, period: klinePeriod, count: 120 }))
+        const pKline = fb(call('kline', { symbol: view, period: klinePeriod, count: 500 }))
         const pMinute = fb(call('minute', { symbol: view }))
         const pFinance = fb(call('finance', { symbol: view }))
         const pKol = fb(call('kol', { symbol: view, count: 6 }))
@@ -1006,7 +1118,7 @@ exports.default = {
               })()) : null
             ]),
             chartMode === 'kline'
-              ? el(KlineChart, { key: 'c', rows: kl.rows })
+              ? el(KlineChart, { key: 'c', rows: kl.rows, onNeedEarlier: fetchEarlierKline })
               : el(MinuteChart, { key: 'c', items: mn.items, lastClose: mn.last_close })
           ]),
           firstFin ? el('div', { key: 'fin', className: 'xq-card' }, [

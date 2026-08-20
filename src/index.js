@@ -336,8 +336,10 @@ export default {
       const period = String(args.period || 'day')
       const count = Math.min(Math.max(parseInt(args.count, 10) || 120, 5), 500)
       const symbol = String(args.symbol || '')
-      // begin 按分钟取整，保证 TTL 窗口内缓存 key 稳定（count 为负，返回的是最近 N 根）
-      const begin = Math.floor(Date.now() / 60000) * 60000
+      // begin 按分钟取整，保证 TTL 窗口内缓存 key 稳定（count 为负，返回的是最近 N 根）。
+      // args.begin（毫秒时间戳，通常传当前最早一根）：取该根往前的更早历史
+      let begin = Math.floor(Date.now() / 60000) * 60000
+      if (isFinite(Number(args.begin)) && Number(args.begin) > 0) begin = Math.floor(Number(args.begin) / 60000) * 60000
       const data = await getJSON('/v5/stock/chart/kline.json', {
         symbol: symbol, period: period, type: 'before', begin: begin,
         count: -count, indicator: 'kline,pe,pb,ps,pcf,market_capital'

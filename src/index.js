@@ -106,8 +106,9 @@ export default {
       const shell = getShell()
       if (!shell) return ''
       cookieSeeding = (async function () {
-      // 雪球主域 302 → www.xueqiu.com，必须 -L 跟随才能拿到 Set-Cookie
-      const cmd = "curl -s -L --max-time 12 -D - -o /dev/null 'https://www.xueqiu.com/' -H 'User-Agent: " + UA + "'"
+      // 雪球首页 / 已被阿里云 WAF JS 挑战接管（只发 acw_tc，不发 xq_a_token），
+      // 改从 /hq 行情页播种（该路径无挑战，直接发全套匿名 token）；-L 跟随 302
+      const cmd = "curl -s -L --max-time 12 -D - -o /dev/null 'https://xueqiu.com/hq' -H 'User-Agent: " + UA + "'"
       const spec = shell.resolve({ command: cmd, timeoutMs: 15000, stdoutMaxBytes: 65536 })
       const res = await shell.run(spec)
       if (res.exitCode !== 0) return ''

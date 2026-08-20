@@ -37,5 +37,8 @@
 2. 动态模式自测（cordis define/run + 浏览器）
 3. `npm run check`（静态关卡）
 4. 版本号 + 双语 changelog → commit → push
-5. `npm publish`（prepublishOnly 会再跑一遍关卡）
+5. `npm publish --registry https://registry.npmjs.org`（prepublishOnly 会再跑一遍关卡；
+   本机默认 registry 是 npmmirror 镜像，**必须显式指定官方 registry**）
 6. tag + GitHub Release
+7. （仅首次）确认 `package.json` 含 `repository` 字段——npm 包 ↔ GitHub 仓库的关联依据，
+   插件市场（dsh-market 1.15.0+）靠它自动采集下载量排序；已随 v1.15.2 补齐

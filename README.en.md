@@ -16,7 +16,7 @@
 
 | Feature | Notes |
 | --- | --- |
-| 📊 Live quotes | Major indices (SH/SZ/ChiNext/CSI300) + watchlist, CN-style red-up/green-down, **sortable columns** |
+| 📊 Live quotes | Major indices (SSE/SZSE/ChiNext/STAR50) + watchlist, CN-style red-up/green-down, **sortable columns** |
 | 🕯️ Candlestick | Candles + volume bars + **MA5/10/20** + **crosshair tooltip** (OHLC/pct/vol/MAs); 7 periods: 5m/15m/30m/60m/day/week/month |
 | ⏱️ Minute chart | Price + avg lines with prev-close baseline, crosshair for any minute |
 | 🔥 Hot list | Xueqiu trending stocks, switch CN/US/HK/global |
@@ -81,7 +81,7 @@ define a plugin with cordis_define (kind: new):
 ## Usage
 
 - The panel docks above the composer, in the conversation column; `Collapse —` or `Esc` hides it.
-- The bottom-right mini badge shows live SH/SZ indices; **click** toggles the panel, **drag** to move (remembered).
+- The bottom-right market region shows four indices (SSE/SZSE/ChiNext/STAR50) plus your top-12 watchlist quotes; **click** toggles the panel, **drag** to move, **⤡ grip** resizes width (remembered).
 - The ticker bar under the composer also expands the panel on click.
 - Click any watchlist row, index card or hot-list row for the detail view: 16 stats + K-line/minute toggle (hover for crosshair) + financials + trending users.
 - **Resize**: drag the handle under the panel (160px–85% viewport); double-click resets; height is remembered.

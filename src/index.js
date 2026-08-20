@@ -823,5 +823,190 @@ export default {
         })
       })
     }
+
+    // ---- Agent 工具（一期 6 个）：模型在对话中直接查询雪球数据 ----
+    // 输出统一为 JSON 字符串（对齐 dsh-us-stocks 的 jsonOutput 模式，schema 简单、渲染即文本）。
+    function xqToolOutput() {
+      return {
+        schema: { type: 'string' },
+        render: function (_args, value) { return [{ type: 'text', text: String(value) }] }
+      }
+    }
+    function xqIso(ms) {
+      const d = new Date(Number(ms))
+      return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 19).replace('T', ' ')
+    }
+
+    const XQ_AGENT_TOOLS = [
+      {
+        name: 'xueqiu_quote',
+        description: '雪球实时行情（A股/港股/美股/指数）。symbols 用雪球代码：SH600519（贵州茅台）、SZ300750、00700（腾讯港股）、AAPL（美股）、SH000001（上证指数）。逗号分隔，一次最多 20 只。返回现价、涨跌幅、成交量额、市值、市盈率、换手率等。不确定代码时先用 xueqiu_search 查。',
+        parameters: {
+          type: 'object',
+          properties: {
+            symbols: { type: 'string', description: '雪球代码，逗号分隔，如 "SH600519,00700,AAPL"' }
+          },
+          required: ['symbols'],
+          additionalProperties: true
+        },
+        output: xqToolOutput(),
+        timeoutMs: 30000,
+        async execute(args) {
+          const list = String(args.symbols || '').split(',').map(function (s) { return s.trim() }).filter(Boolean).slice(0, 20)
+          const r = await actQuote({ symbols: list })
+          const rows = (r.list || []).map(function (q) {
+            return {
+              symbol: q.symbol, name: q.name, current: q.current, percent: q.percent, chg: q.chg,
+              open: q.open, last_close: q.last_close, high: q.high, low: q.low,
+              volume: q.volume, amount: q.amount, market_capital: q.market_capital,
+              pe_ttm: q.pe_ttm, pb: q.pb, turnover_rate: q.turnover_rate
+            }
+          })
+          return JSON.stringify({ status: r.status, count: rows.length, list: rows })
+        }
+      },
+      {
+        name: 'xueqiu_kline',
+        description: '雪球历史K线（OHLCV+涨跌幅）。period 支持 1m/5m/15m/30m/60m/day/week/month，count 5–250 根（默认 60）。适合分析走势、计算区间涨跌。A股/港股/美股/指数通用。',
+        parameters: {
+          type: 'object',
+          properties: {
+            symbol: { type: 'string', description: '雪球代码，如 SH600519' },
+            period: { type: 'string', enum: ['1m', '5m', '15m', '30m', '60m', 'day', 'week', 'month'], description: 'K线周期，默认 day' },
+            count: { type: 'number', description: '返回根数 5–250，默认 60' }
+          },
+          required: ['symbol'],
+          additionalProperties: true
+        },
+        output: xqToolOutput(),
+        timeoutMs: 30000,
+        async execute(args) {
+          const r = await actKline({
+            symbol: String(args.symbol || ''),
+            period: String(args.period || 'day'),
+            count: Math.min(Math.max(parseInt(args.count, 10) || 60, 5), 250)
+          })
+          const rows = (r.rows || []).map(function (k) {
+            return { time: xqIso(k.timestamp), open: k.open, high: k.high, low: k.low, close: k.close, volume: k.volume, percent: k.percent }
+          })
+          if (!rows.length) return JSON.stringify({ error: '无K线数据（检查代码是否正确，如 SH600519）' })
+          return JSON.stringify({ symbol: String(args.symbol || ''), period: String(args.period || 'day'), count: rows.length, rows: rows })
+        }
+      },
+      {
+        name: 'xueqiu_search',
+        description: '按名称或代码搜索雪球股票（A股/港股/美股/指数/ETF）。返回代码+名称，结果可直接用于 xueqiu_quote / xueqiu_kline。如 "茅台"、"600519"、"苹果"、"AAPL"。',
+        parameters: {
+          type: 'object',
+          properties: {
+            q: { type: 'string', description: '搜索词：中文名、拼音、代码或 ticker' }
+          },
+          required: ['q'],
+          additionalProperties: true
+        },
+        output: xqToolOutput(),
+        timeoutMs: 30000,
+        async execute(args) {
+          const r = await actSearch({ q: String(args.q || ''), count: 10 })
+          return JSON.stringify({ count: (r.list || []).length, list: r.list || [] })
+        }
+      },
+      {
+        name: 'xueqiu_hot',
+        description: '雪球热门股票榜（按讨论热度）。market: cn=A股(默认) / hk=港股 / us=美股 / global=全球。返回代码、名称、现价、涨跌幅、热度排名变化。适合"今天什么股票最火"类问题。',
+        parameters: {
+          type: 'object',
+          properties: {
+            market: { type: 'string', enum: ['cn', 'hk', 'us', 'global'], description: '市场，默认 cn' },
+            size: { type: 'number', description: '返回条数 1–30，默认 10' }
+          },
+          required: [],
+          additionalProperties: true
+        },
+        output: xqToolOutput(),
+        timeoutMs: 30000,
+        async execute(args) {
+          const r = await actHot({
+            market: String(args.market || 'cn'),
+            size: Math.min(Math.max(parseInt(args.size, 10) || 10, 1), 30)
+          })
+          const rows = (r.list || []).map(function (h) {
+            return { symbol: h.symbol, name: h.name, current: h.current, percent: h.percent, rank_change: h.rank_change }
+          })
+          return JSON.stringify({ market: String(args.market || 'cn'), count: rows.length, list: rows })
+        }
+      },
+      {
+        name: 'xueqiu_news',
+        description: '雪球 7×24 实时财经快讯（A股/港美股/宏观）。返回最新快讯列表（时间+文本+重要性标记 mark=1 为重要）。max_id 传上一页最旧一条的 id 可翻页。',
+        parameters: {
+          type: 'object',
+          properties: {
+            count: { type: 'number', description: '返回条数 1–30，默认 15' },
+            max_id: { type: 'number', description: '翻页游标：上一页最旧一条的 id' }
+          },
+          required: [],
+          additionalProperties: true
+        },
+        output: xqToolOutput(),
+        timeoutMs: 30000,
+        async execute(args) {
+          const r = await actNews({
+            count: Math.min(Math.max(parseInt(args.count, 10) || 15, 1), 30),
+            max_id: args.max_id
+          })
+          const rows = (r.items || []).map(function (n) {
+            return { id: n.id, time: xqIso(n.created_at), mark: n.mark, text: String(n.text || '').slice(0, 160) }
+          })
+          return JSON.stringify({ count: rows.length, oldest_id: rows.length ? rows[rows.length - 1].id : null, items: rows })
+        }
+      },
+      {
+        name: 'xueqiu_kol',
+        description: '某只股票在雪球上讨论最热的投资大V（KOL）。返回昵称、粉丝数、简介。适合"这只股票有哪些大V在关注"类问题。symbol 用雪球代码（如 SH600519）。',
+        parameters: {
+          type: 'object',
+          properties: {
+            symbol: { type: 'string', description: '雪球代码，如 SH600519' },
+            count: { type: 'number', description: '返回条数 1–10，默认 8' }
+          },
+          required: ['symbol'],
+          additionalProperties: true
+        },
+        output: xqToolOutput(),
+        timeoutMs: 30000,
+        async execute(args) {
+          const r = await actKOL({
+            symbol: String(args.symbol || ''),
+            count: Math.min(Math.max(parseInt(args.count, 10) || 8, 1), 10)
+          })
+          const rows = (r.list || []).map(function (u) {
+            return { screen_name: u.screen_name, followers_count: u.followers_count, verified: !!u.verified, description: String(u.description || '').slice(0, 80) }
+          })
+          return JSON.stringify({ symbol: String(args.symbol || ''), count: rows.length, list: rows })
+        }
+      }
+    ]
+
+    // 注册：动态环境走 harness 门面（defineTool 会做标记+校验）；
+    // 静态 bundle 层没有 harness，参数已是 JSON Schema 根，直接注册 plain 对象
+    // （tools 服务在静态路径无 defineTool 守卫），用 inject 等服务就绪。
+    if (typeof harness !== 'undefined') {
+      for (let i = 0; i < XQ_AGENT_TOOLS.length; i++) {
+        const spec = XQ_AGENT_TOOLS[i]
+        ctx.effect(function () {
+          return harness.registerTool(ctx, harness.defineTool(spec))
+        })
+      }
+    } else {
+      ctx.inject(['tools'], function (toolsCtx) {
+        for (let i = 0; i < XQ_AGENT_TOOLS.length; i++) {
+          const spec = XQ_AGENT_TOOLS[i]
+          toolsCtx.effect(function () {
+            return toolsCtx.tools.register(spec)
+          })
+        }
+      })
+    }
   }
 }

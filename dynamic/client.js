@@ -2,6 +2,20 @@ return {
   inject: ['timer'],
   apply(ctx) {
     styles.insert('\n' +
+      '.xq-tv-shell{border:1px solid var(--dsw-alias-border-l1);border-radius:10px;padding:8px 10px;margin:4px 0;font-size:13px;line-height:1.5;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1);min-width:0;}\n' +
+      '.xq-tv-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;}\n' +
+      '.xq-tv-title{font-weight:700;}\n' +
+      '.xq-tv-pill{font-size:11px;padding:1px 7px;border-radius:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);white-space:nowrap;}\n' +
+      '.xq-tv-table{display:flex;flex-direction:column;gap:2px;}\n' +
+      '.xq-tv-row{display:flex;align-items:baseline;gap:10px;padding:2px 4px;border-radius:6px;}\n' +
+      '.xq-tv-row:hover{background:var(--dsw-alias-bg-layer-2);}\n' +
+      '.xq-tv-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}\n' +
+      '.xq-tv-code{color:var(--dsw-alias-label-tertiary);font-size:11px;}\n' +
+      '.xq-tv-price{font-weight:700;font-variant-numeric:tabular-nums;}\n' +
+      '.xq-tv-pct{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap;}\n' +
+      '.xq-tv-shell svg{max-width:100%;height:auto;display:block;}\n' +
+      '.xq-up{color:var(--dsw-alias-state-error-primary);}\n' +
+      '.xq-down{color:var(--dsw-alias-state-success-primary);}\n' +
       '.xq-dock{background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-radius:10px;overflow:hidden;font-size:13px;line-height:1.45;color:var(--dsw-alias-label-primary);margin-bottom:6px;}\n' +
       '.xq-dock *{box-sizing:border-box;}\n' +
       '.xq-dock-head{display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid var(--dsw-alias-border-l1);}\n' +
@@ -1413,9 +1427,98 @@ return {
       return el('div', { className: 'xq-ticker', onClick: function () { ui.set({ open: true }) } }, kids)
     }
 
+    // ---------- Agent 工具调用卡片（tool.call.toolview）：xueqiu_quote / xueqiu_kline ----------
+    // execute 返回 JSON 字符串；从 tool-result block 的 content 里递归找 text 再 parse（us-stocks 同款防御）。
+    function xqToolText(content, depth) {
+      depth = depth || 0
+      if (depth > 3 || !Array.isArray(content)) return undefined
+      for (let i = 0; i < content.length; i++) {
+        const b = content[i]
+        if (!b || typeof b !== 'object') continue
+        if (b.type === 'text' && typeof b.text === 'string') return b.text
+        const nested = xqToolText(b.content, depth + 1)
+        if (nested !== undefined) return nested
+      }
+      return undefined
+    }
+    function xqParseResult(block) {
+      // block 可能是运行中（无 kind）或已完成（kind=tool-result）
+      if (!block || typeof block !== 'object') return null
+      const text = xqToolText(block.content)
+      if (text === undefined) return null
+      try {
+        const v = JSON.parse(text)
+        return (v && typeof v === 'object') ? v : null
+      } catch (e) { return null }
+    }
+
+    function QuoteCard(props) {
+      const block = props.block
+      const r = xqParseResult(block)
+      if (!r) return el('div', { className: 'xq-tv-shell' }, block && block.kind ? '结果不可读' : '查询中…')
+      const list = Array.isArray(r.list) ? r.list : []
+      if (!list.length) return el('div', { className: 'xq-tv-shell' }, '无行情数据（检查代码，或先用 xueqiu_search 查代码）')
+      return el('div', { className: 'xq-tv-shell' }, [
+        el('div', { key: 'h', className: 'xq-tv-head' }, [
+          el('span', { key: 't', className: 'xq-tv-title' }, '雪球行情'),
+          el('span', { key: 'n', className: 'xq-tv-pill' }, list.length + ' 只'),
+          r.status ? el('span', { key: 's', className: 'xq-tv-pill' }, r.status) : null
+        ]),
+        el('div', { key: 'b', className: 'xq-tv-table' }, list.map(function (q) {
+          const up = Number(q.percent) > 0, dn = Number(q.percent) < 0
+          return el('div', { key: q.symbol, className: 'xq-tv-row' }, [
+            el('span', { key: 'n', className: 'xq-tv-name' }, [
+              String(q.name || ''),
+              el('span', { key: 'c', className: 'xq-tv-code' }, ' ' + String(q.symbol || ''))
+            ]),
+            el('span', { key: 'p', className: 'xq-tv-price ' + (up ? 'xq-up' : dn ? 'xq-down' : '') }, fmt(q.current)),
+            el('span', { key: 'g', className: 'xq-tv-pct ' + (up ? 'xq-up' : dn ? 'xq-down' : '') },
+              fmtPct(q.percent))
+          ])
+        }))
+      ])
+    }
+
+    function KlineCard(props) {
+      const block = props.block
+      const r = xqParseResult(block)
+      if (!r) return el('div', { className: 'xq-tv-shell' }, block && block.kind ? '结果不可读' : '查询中…')
+      if (r.error) return el('div', { className: 'xq-tv-shell' }, String(r.error))
+      const rows = Array.isArray(r.rows) ? r.rows : []
+      if (!rows.length) return el('div', { className: 'xq-tv-shell' }, '无K线数据')
+      const first = rows[0], last = rows[rows.length - 1]
+      const chgPct = Number(first.close) ? (Number(last.close) - Number(first.close)) / Number(first.close) * 100 : 0
+      const lb = { '1m': '1分', '5m': '5分', '15m': '15分', '30m': '30分', '60m': '60分', day: '日K', week: '周K', month: '月K' }
+      // 复用面板蜡烛图（rows 字段兼容：卡片 rows 已含 open/high/low/close/volume）
+      return el('div', { className: 'xq-tv-shell' }, [
+        el('div', { key: 'h', className: 'xq-tv-head' }, [
+          el('span', { key: 't', className: 'xq-tv-title' }, String(r.symbol || '')),
+          el('span', { key: 'p', className: 'xq-tv-pill' }, lb[r.period] || r.period || '日K'),
+          el('span', { key: 'n', className: 'xq-tv-pill' }, rows.length + ' 根'),
+          rows.length > 1 ? el('span', { key: 'd', className: 'xq-tv-pill' },
+            String(first.time || '').slice(0, 10) + ' → ' + String(last.time || '').slice(0, 10)) : null,
+          el('span', { key: 'g', className: 'xq-tv-pct ' + (chgPct > 0 ? 'xq-up' : chgPct < 0 ? 'xq-down' : ''), style: { marginLeft: 'auto' } },
+            fmt(last.close) + '  ' + (chgPct >= 0 ? '+' : '') + chgPct.toFixed(2) + '%')
+        ]),
+        el(KlineChart, { key: 'c', rows: rows })
+      ])
+    }
+
     // ---------- 注册 ----------
     const slots = ctx.get('slots')
     if (slots === undefined) return
+    slots.inject('tool.call.toolview', function () {
+      return slots.register(
+        { name: 'tool.call.toolview', key: 'xueqiu_quote' },
+        function (props) { return el(QuoteCard, props) }
+      )
+    })
+    slots.inject('tool.call.toolview', function () {
+      return slots.register(
+        { name: 'tool.call.toolview', key: 'xueqiu_kline' },
+        function (props) { return el(KlineCard, props) }
+      )
+    })
     slots.inject('conversation.input.dock', function () {
       return slots.register(
         { name: 'conversation.input.dock', id: 'xueqiu-panel', order: 30 },

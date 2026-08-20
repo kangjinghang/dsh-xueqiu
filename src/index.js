@@ -833,8 +833,11 @@ export default {
       }
     }
     function xqIso(ms) {
+      // 本地时区格式化（toISOString 是 UTC，中文环境会差 8 小时）
       const d = new Date(Number(ms))
-      return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 19).replace('T', ' ')
+      if (isNaN(d.getTime())) return null
+      const p = function (n) { return (n < 10 ? '0' : '') + n }
+      return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds())
     }
 
     const XQ_AGENT_TOOLS = [

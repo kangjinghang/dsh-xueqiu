@@ -29,6 +29,9 @@ if not client_body.startswith('return {'):
     die('dynamic/client.js 必须以 "return {" 开头（函数体形式）')
 
 # ---- host: export default 包装（函数体顶层 return 换成 export default）----
+# 注意：不注入任何宿主包 import —— file: 安装不会安装 peer 依赖，顶层 import
+# 会直接 ERR_MODULE_NOT_FOUND 崩掉宿主。agent 工具注册见 host 尾部 xqDefineTool：
+# 动态环境用 harness.defineTool，静态环境在运行时从宿主进程解析 dsh-tools，再退回 plain。
 assert host_body.startswith('return {')
 host_static = 'export default {' + host_body[len('return {'):] + '\n'
 

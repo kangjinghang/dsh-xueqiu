@@ -6,7 +6,7 @@
 [![npm downloads](https://img.shields.io/npm/dm/dsh-xueqiu?style=flat-square)](https://www.npmjs.com/package/dsh-xueqiu)
 [![GitHub stars](https://img.shields.io/github/stars/kangjinghang/dsh-xueqiu?style=flat-square)](https://github.com/kangjinghang/dsh-xueqiu/stargazers)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](./LICENSE)
-[![dsh-plugin](https://img.shields.io/badge/dsh-plugin-xueqiu-1DA1F2?style=flat-square)](#-安装)
+[![dsh-plugin](https://img.shields.io/badge/dsh--plugin-xueqiu-1DA1F2?style=flat-square)](#-安装)
 
 中文 | [English](./README.en.md)
 

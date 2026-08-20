@@ -250,6 +250,14 @@ def suite_ui(base):
     check("ui.set 正常值", ok_data(c, r), json.dumps(r)[:150])
     c, r = rpc(base, "ui.set", {"badgeW": "NaN!"})
     check("ui.set 非数值不崩溃", ok_data(c, r), json.dumps(r)[:150])
+    c, r = rpc(base, "ui.set", {"badgeW": 400})
+    check("ui.set badgeW=400", ok_data(c, r), json.dumps(r)[:150])
+    c, r = rpc(base, "ui.set", {"badgeW": None})
+    check("ui.set badgeW=null 显式复位(不落盘为下限120)", ok_data(c, r), json.dumps(r)[:150])
+    c, r = rpc(base, "ui.get")
+    check("ui.get 复位后 badgeW=null",
+          ((r.get("data") or {}).get("badgeW") or 0) in (0, None, "null"),
+          json.dumps(r)[:200])
 
 
 def suite_security(base):

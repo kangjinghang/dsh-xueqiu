@@ -1143,8 +1143,11 @@ exports.default = {
           if (d && typeof d.open === 'boolean') ui.set({ open: d.open })
           if (d && d.badgePos && isFinite(Number(d.badgePos.x)) && isFinite(Number(d.badgePos.y))) {
             // 恢复位置时钳制到当前视口内（视口缩小/分辨率变化后防止徽章落到屏幕外）
+            // maxX 必须按徽章实际宽度算：区域模式宽达 480px，固定 -140 会让宽徽章右缘出屏
             const vp = viewport()
-            const maxX = (vp ? vp.w : 1200) - 140
+            const effW = (typeof d.badgeW === 'number' && isFinite(d.badgeW) && d.badgeW >= 120)
+              ? Math.min(d.badgeW, 480) : 320
+            const maxX = (vp ? vp.w : 1200) - effW - 4
             const maxY = (vp ? vp.h : 800) - 60
             ui.set({ badgePos: {
               x: Math.min(Math.max(4, Number(d.badgePos.x)), Math.max(4, maxX)),

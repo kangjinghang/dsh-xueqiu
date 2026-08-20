@@ -132,8 +132,11 @@ return {
       opts = opts || {}
       const shell = getShell()
       if (!shell) throw new Error('shell 服务不可用，无法访问雪球')
-      // 登录态优先：请求头用用户 Cookie；显式 cookie 参数（登录校验）最高
-      const cookie = opts.cookie !== undefined ? opts.cookie : (login ? login.cookie : await ensureCookie(false))
+      // 登录态优先：请求头用用户 Cookie；显式 cookie 参数（登录校验）最高；
+      // anonymous=true 强制匿名（cookie_expired 降级重试：公开数据不需要登录态）
+      const cookie = opts.cookie !== undefined ? opts.cookie
+        : (opts.anonymous || !login) ? await ensureCookie(false)
+        : login.cookie
       let cmd = "curl -s --max-time 12 -X " + (opts.method || 'GET') + " '" + url + "'"
       cmd += " -H 'User-Agent: " + UA + "'"
       cmd += " -H 'Referer: https://www.xueqiu.com/'"
@@ -165,11 +168,14 @@ return {
       opts = opts || {}
       const url = (opts.base || BASE) + path + toQuery(params || {})
       const ttl = opts.ttl || 0
+      // cookie_expired 降级：登录 Cookie 失效时，公开数据改用匿名种子 Cookie 重试，
+      // 避免过期登录态毒化所有匿名可用的行情接口（云端专属接口失败照常抛错）。
+      let anonymous = opts.anonymous === true
 
       async function attempt(depth) {
         const err = await (async function () {
           let text
-          try { text = await curl(url, { cookie: opts.cookie }) } catch (e) { return { kind: 'network', message: e.message, retryable: depth < 1 } }
+          try { text = await curl(url, { cookie: opts.cookie, anonymous: anonymous }) } catch (e) { return { kind: 'network', message: e.message, retryable: depth < 1 } }
           if (!text) return { kind: 'empty', message: '雪球返回空响应（可能被风控）', retryable: true }
           let data
           try { data = JSON.parse(text) } catch (e) { return { kind: 'parse', message: '响应解析失败: ' + text.slice(0, 120), retryable: false } }
@@ -188,6 +194,9 @@ return {
         if (!err.retryable || depth >= 2) throw new Error('[' + err.kind + '] ' + err.message)
 
         if (err.kind === 'cookie_expired' || err.kind === 'empty' || err.kind === 'empty_kline') {
+          if (err.kind === 'cookie_expired' && !anonymous && opts.cookie === undefined && login) {
+            anonymous = true   // 登录 Cookie 被判失效：先降级匿名重试
+          }
           await ensureCookie(true)   // 重新播种 cookie 后再试
         } else if (err.kind === 'rate_limited') {
           await delay(2000 * (depth + 1)) // 指数退避：2s → 4s

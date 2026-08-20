@@ -741,13 +741,21 @@ export default {
       if (args.badgePos && typeof args.badgePos === 'object' && isFinite(Number(args.badgePos.x)) && isFinite(Number(args.badgePos.y))) {
         s.badgePos = { x: Number(args.badgePos.x), y: Number(args.badgePos.y) }
       }
+      // null = 显式复位（客户端"双击复位/默认高度"会发送 null）；
+      // 不能走 Number(null)=0 的钳制路径，否则复位被写成了下限值(120/160)
       if (args.dockH !== undefined) {
-        const dh = Number(args.dockH)
-        if (isFinite(dh)) s.dockH = Math.min(Math.max(dh, 160), 1200)
+        if (args.dockH === null) { s.dockH = null }
+        else {
+          const dh = Number(args.dockH)
+          if (isFinite(dh)) s.dockH = Math.min(Math.max(dh, 160), 1200)
+        }
       }
       if (args.badgeW !== undefined) {
-        const bw = Number(args.badgeW)
-        if (isFinite(bw)) s.badgeW = Math.min(Math.max(bw, 120), 480)
+        if (args.badgeW === null) { s.badgeW = null }
+        else {
+          const bw = Number(args.badgeW)
+          if (isFinite(bw)) s.badgeW = Math.min(Math.max(bw, 120), 480)
+        }
       }
       await saveUiState()
       return { ok: true }

@@ -65,6 +65,16 @@
 
 ![迷你行情区域](https://raw.githubusercontent.com/kangjinghang/dsh-xueqiu/main/assets/badge.png)
 
+**Agent 工具调用卡片**（对话内直接问行情，结果渲染为专属卡片而非 JSON）：
+
+| `xueqiu_quote` 行情表 | `xueqiu_kline` 蜡烛图 |
+| --- | --- |
+| ![quote](https://raw.githubusercontent.com/kangjinghang/dsh-xueqiu/main/assets/toolcards/quote.png) | ![kline](https://raw.githubusercontent.com/kangjinghang/dsh-xueqiu/main/assets/toolcards/kline.png) |
+
+| `xueqiu_hot` 热榜 | `xueqiu_news` 快讯时间线 |
+| --- | --- |
+| ![hot](https://raw.githubusercontent.com/kangjinghang/dsh-xueqiu/main/assets/toolcards/hot.png) | ![news](https://raw.githubusercontent.com/kangjinghang/dsh-xueqiu/main/assets/toolcards/news.png) |
+
 ## 📦 安装
 
 ### 方式一：标准 bundle 插件（推荐）

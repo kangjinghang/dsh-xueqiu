@@ -52,6 +52,16 @@ All data comes from Xueqiu public web endpoints (anonymous cookie seeded by visi
 
 ![Badge](https://raw.githubusercontent.com/kangjinghang/dsh-xueqiu/main/assets/badge.png)
 
+**Agent toolview cards** — ask about markets right in the conversation; results render as purpose-built cards instead of raw JSON:
+
+| `xueqiu_quote` table | `xueqiu_kline` candles |
+| --- | --- |
+| ![quote](https://raw.githubusercontent.com/kangjinghang/dsh-xueqiu/main/assets/toolcards/quote.png) | ![kline](https://raw.githubusercontent.com/kangjinghang/dsh-xueqiu/main/assets/toolcards/kline.png) |
+
+| `xueqiu_hot` hot list | `xueqiu_news` timeline |
+| --- | --- |
+| ![hot](https://raw.githubusercontent.com/kangjinghang/dsh-xueqiu/main/assets/toolcards/hot.png) | ![news](https://raw.githubusercontent.com/kangjinghang/dsh-xueqiu/main/assets/toolcards/news.png) |
+
 ## Install
 
 ### Option 1: Standard bundle plugin (recommended)

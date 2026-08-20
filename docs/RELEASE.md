@@ -39,6 +39,11 @@
 4. 版本号 + 双语 changelog → commit → push
 5. `npm publish --registry https://registry.npmjs.org`（prepublishOnly 会再跑一遍关卡；
    本机默认 registry 是 npmmirror 镜像，**必须显式指定官方 registry**）
-6. tag + GitHub Release
+6. tag + GitHub Release（**别漏**——v1.10~v1.15.2 曾只发 npm 漏建 Release，后补 12 个）：
+   ```bash
+   git tag -a v<X.Y.Z> -m "v<X.Y.Z> — <标题>" && git push --tags
+   gh release create v<X.Y.Z> --title "v<X.Y.Z> — <标题>" --notes "<从 changelog 提取>"
+   ```
+   注意：tag 已存在时 `gh release create` **不要**再传 `--target`（会 422），直接用 tag。
 7. （仅首次）确认 `package.json` 含 `repository` 字段——npm 包 ↔ GitHub 仓库的关联依据，
    插件市场（dsh-market 1.15.0+）靠它自动采集下载量排序；已随 v1.15.2 补齐

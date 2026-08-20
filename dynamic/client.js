@@ -14,6 +14,16 @@ return {
       '.xq-tv-price{font-weight:700;font-variant-numeric:tabular-nums;}\n' +
       '.xq-tv-pct{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap;}\n' +
       '.xq-tv-shell svg{max-width:100%;height:auto;display:block;}\n' +
+      '.xq-tv-rank{width:22px;flex:none;text-align:right;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-tertiary);font-size:12px;}\n' +
+      '.xq-tv-rankup{color:var(--dsw-alias-state-error-primary);font-size:11px;flex:none;font-variant-numeric:tabular-nums;}\n' +
+      '.xq-tv-rankdn{color:var(--dsw-alias-state-success-primary);font-size:11px;flex:none;font-variant-numeric:tabular-nums;}\n' +
+      '.xq-tv-news{display:flex;flex-direction:column;gap:1px;max-height:300px;overflow-y:auto;}\n' +
+      '.xq-tv-item{display:flex;gap:8px;align-items:baseline;padding:2px 4px;border-radius:6px;}\n' +
+      '.xq-tv-item:hover{background:var(--dsw-alias-bg-layer-2);}\n' +
+      '.xq-tv-mark{background:var(--dsw-alias-bg-layer-2);}\n' +
+      '.xq-tv-time{flex:none;font-size:11px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;}\n' +
+      '.xq-tv-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}\n' +
+      '.xq-tv-flag{color:var(--dsw-alias-state-error-primary);font-weight:700;}\n' +
       '.xq-up{color:var(--dsw-alias-state-error-primary);}\n' +
       '.xq-down{color:var(--dsw-alias-state-success-primary);}\n' +
       '.xq-dock{background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-radius:10px;overflow:hidden;font-size:13px;line-height:1.45;color:var(--dsw-alias-label-primary);margin-bottom:6px;}\n' +
@@ -1504,6 +1514,62 @@ return {
       ])
     }
 
+    function HotCard(props) {
+      const block = props.block
+      const r = xqParseResult(block)
+      if (!r) return el('div', { className: 'xq-tv-shell' }, block && block.kind ? '结果不可读' : '查询中…')
+      const list = Array.isArray(r.list) ? r.list : []
+      if (!list.length) return el('div', { className: 'xq-tv-shell' }, '无热榜数据')
+      const mk = { cn: 'A股', hk: '港股', us: '美股', global: '全球' }
+      return el('div', { className: 'xq-tv-shell' }, [
+        el('div', { key: 'h', className: 'xq-tv-head' }, [
+          el('span', { key: 't', className: 'xq-tv-title' }, '雪球热榜'),
+          el('span', { key: 'm', className: 'xq-tv-pill' }, mk[r.market] || r.market || 'A股'),
+          el('span', { key: 'n', className: 'xq-tv-pill' }, list.length + ' 只')
+        ]),
+        el('div', { key: 'b', className: 'xq-tv-table' }, list.map(function (h, i) {
+          const up = Number(h.percent) > 0, dn = Number(h.percent) < 0
+          const rc = Number(h.rank_change)
+          return el('div', { key: h.symbol || i, className: 'xq-tv-row' }, [
+            el('span', { key: 'r', className: 'xq-tv-rank' }, String(i + 1)),
+            el('span', { key: 'n', className: 'xq-tv-name' }, [
+              String(h.name || ''),
+              el('span', { key: 'c', className: 'xq-tv-code' }, ' ' + String(h.symbol || ''))
+            ]),
+            rc > 0 ? el('span', { key: 'rc', className: 'xq-tv-rankup', title: '热度排名上升' }, '↑' + rc) :
+              rc < 0 ? el('span', { key: 'rc', className: 'xq-tv-rankdn', title: '热度排名下降' }, '↓' + (-rc)) : null,
+            el('span', { key: 'p', className: 'xq-tv-price ' + (up ? 'xq-up' : dn ? 'xq-down' : '') }, fmt(h.current)),
+            el('span', { key: 'g', className: 'xq-tv-pct ' + (up ? 'xq-up' : dn ? 'xq-down' : '') },
+              fmtPct(h.percent))
+          ])
+        }))
+      ])
+    }
+
+    function NewsCard(props) {
+      const block = props.block
+      const r = xqParseResult(block)
+      if (!r) return el('div', { className: 'xq-tv-shell' }, block && block.kind ? '结果不可读' : '查询中…')
+      const items = Array.isArray(r.items) ? r.items : []
+      if (!items.length) return el('div', { className: 'xq-tv-shell' }, '无快讯')
+      return el('div', { className: 'xq-tv-shell' }, [
+        el('div', { key: 'h', className: 'xq-tv-head' }, [
+          el('span', { key: 't', className: 'xq-tv-title' }, '雪球快讯'),
+          el('span', { key: 'n', className: 'xq-tv-pill' }, items.length + ' 条')
+        ]),
+        el('div', { key: 'b', className: 'xq-tv-news' }, items.map(function (n, i) {
+          const t = String(n.time || '')
+          return el('div', { key: n.id || i, className: 'xq-tv-item' + (n.mark === 1 ? ' xq-tv-mark' : '') }, [
+            el('span', { key: 'tm', className: 'xq-tv-time' }, t.slice(11, 16) || t.slice(5, 16)),
+            el('span', { key: 'tx', className: 'xq-tv-text' }, [
+              n.mark === 1 ? el('b', { key: 'm', className: 'xq-tv-flag' }, '重要 ') : null,
+              String(n.text || '')
+            ])
+          ])
+        }))
+      ])
+    }
+
     // ---------- 注册 ----------
     const slots = ctx.get('slots')
     if (slots === undefined) return
@@ -1517,6 +1583,18 @@ return {
       return slots.register(
         { name: 'tool.call.toolview', key: 'xueqiu_kline' },
         function (props) { return el(KlineCard, props) }
+      )
+    })
+    slots.inject('tool.call.toolview', function () {
+      return slots.register(
+        { name: 'tool.call.toolview', key: 'xueqiu_hot' },
+        function (props) { return el(HotCard, props) }
+      )
+    })
+    slots.inject('tool.call.toolview', function () {
+      return slots.register(
+        { name: 'tool.call.toolview', key: 'xueqiu_news' },
+        function (props) { return el(NewsCard, props) }
       )
     })
     slots.inject('conversation.input.dock', function () {

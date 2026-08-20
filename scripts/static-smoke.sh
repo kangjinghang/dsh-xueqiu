@@ -15,7 +15,8 @@
 # 可选: 环境变量 SMOKE_BROWSER=1 且装有 agent-browser 时，追加浏览器徽章检查。
 set -uo pipefail
 
-PLUGIN_DIR=$(cd "$(dirname "$0")/.." && pwd)
+PLUGIN_DIR=${1:-$(cd "$(dirname "$0")/.." && pwd)}
+PLUGIN_DIR=$(cd "$PLUGIN_DIR" && pwd)
 PORT=${SMOKE_PORT:-3199}
 DSH_BIN=${DSH_BIN:-dsh}
 TMP=$(mktemp -d /tmp/xq-smoke.XXXXXX)

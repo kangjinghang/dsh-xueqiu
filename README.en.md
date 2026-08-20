@@ -34,7 +34,7 @@
 | 🕐 Market sessions | Header shows **CN/HK/US** session (open·lunch·pre·closed), badge shows precise A-share session |
 | 🌗 Theme aware | Follows the DSH light/dark theme |
 | 🤖 Agent tools | **Ask about markets right in the conversation**: `xueqiu_quote`, `xueqiu_kline`, `xueqiu_search`, `xueqiu_hot`, `xueqiu_news`, `xueqiu_kol` — the model calls Xueqiu live data directly instead of scraping the web |
-| 🃏 Toolview cards | `xueqiu_quote` renders as a red/green quote table, `xueqiu_kline` as a mini candlestick chart — results are readable directly in the flow |
+| 🃏 Toolview cards | `xueqiu_quote` renders as a red/green quote table, `xueqiu_kline` as a mini candlestick chart, `xueqiu_hot` as a ranked hot list, `xueqiu_news` as a news timeline — results are readable directly in the flow |
 
 All data comes from Xueqiu public web endpoints (anonymous cookie seeded by visiting the homepage + browser UA/Referer). **No login.**
 
@@ -123,6 +123,7 @@ The data layer is defended in depth — safe to leave open for hours:
 
 ## Changelog
 
+- **1.18.1** (2025-08-20) — Hot-list card for `xueqiu_hot` (rank + name + rank-change + price/pct) and news-timeline card for `xueqiu_news` (mark=1 items highlighted, scrollable in place).
 - **1.18.0** (2025-08-20) — **Toolview cards**: `xueqiu_quote` results render as a red/green quote table, `xueqiu_kline` as a mini candlestick chart (reusing the panel chart component), readable directly in the conversation flow.
 - **1.17.0** (2025-08-20) — **Agent tools (first batch of 6)**: the model can now call Xueqiu live data directly in conversation — `xueqiu_quote` (batch quotes), `xueqiu_kline` (7 periods OHLCV), `xueqiu_search`, `xueqiu_hot`, `xueqiu_news` (paginated), `xueqiu_kol` (per-stock trending users, unique community data). Reuses the existing request gate / cache / cookie self-healing; zero new request paths.
 - **1.9.0** (2025-08-19) — Micro-interactions (tab fade, refresh spinner), news timeline with day-group anchors, badge hover watchlist preview, and crosshair axis labels (price + date/time) on K-line/minute charts.

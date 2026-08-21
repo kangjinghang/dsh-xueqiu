@@ -21,6 +21,10 @@ jobs:
           python3 scripts/gen-static.py --check
           node --check src/index.js
           node --check src/client/index.js
+      - name: Offline unit tests (mock shell, no network)
+        run: |
+          node qa/unit.mjs
+          node qa/cookie.mjs
       - name: Static install smoke (real user path)
         run: bash scripts/static-smoke.sh
         env:

@@ -133,6 +133,7 @@ The data layer is defended in depth — safe to leave open for hours:
 
 ## Changelog
 
+- **1.19.1** (2025-08-20) — **Cookie seeding dual-URL fallback**: try `xueqiu.com/hq` first (no WAF challenge, serves the full anonymous token set), fall back to the homepage. In some regions the homepage is taken over by an Aliyun WAF JS challenge that only issues `acw_tc`, breaking anonymous requests with 400016. (Diagnosis and verification by [@Lambenthan](https://github.com/Lambenthan), PR#2.)
 - **1.19.0** (2025-08-20) — **K-line wheel zoom + drag pan**: detail chart shows the last 120 bars by default (500-bar buffer); wheel zooms anchored at the cursor (20 bars → all), horizontal drag pans through history; reaching the buffer head auto-fetches 500 more earlier bars (timestamp-deduped merge, 3000-bar cap); double-click resets. Host `kline` RPC gains a `begin` param for paged history.
 - **1.18.2** (2025-08-20) — Fix: agent-tool timestamps used UTC (`toISOString`), showing news/kline times 8 hours early in CST. Now formatted in the local timezone.
 - **1.18.1** (2025-08-20) — Hot-list card for `xueqiu_hot` (rank + name + rank-change + price/pct) and news-timeline card for `xueqiu_news` (mark=1 items highlighted, scrollable in place).

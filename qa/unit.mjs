@@ -209,6 +209,57 @@ console.log('== U5 UI 状态 ==')
   ok(JSON.stringify((await call('ui.get')).data.badgePos) === JSON.stringify({ x: 10, y: 20 }), 'badgePos 持久化')
 }
 
+console.log('== U7 缓存淘汰（F4）==')
+{
+  // 容量上限：塞入超过 200 个不同 URL 的请求，debug 报告的 cacheKeys 应被钳在 200
+  const scripts = []
+  for (let i = 0; i < 230; i++) scripts.push({ match: 'sym' + i + '&', body: quoteBody('X' + i, i) })
+  scripts.push({ match: 'symbol=', body: () => quoteBody('X' + (scripts.n = (scripts.n || 0)), 1) })
+  const plugin = loadPlugin()
+  const shell = scriptShell(scripts.map((s) => ({ ...s, match: 'batch/quote' })))
+  // 不同 symbol 集合产生不同 URL key
+  const shell2 = { resolve: (s) => s, run: async (spec) => {
+    const url = (spec.command.match(/'(https:[^']+)'/) || [])[1] || ''
+    const m = url.match(/symbol=([A-Za-z0-9_,]+)/)
+    const syms = m ? m[1] : ''
+    const n = syms.split(',').reduce((a, c) => a + c.charCodeAt(0), 0)
+    return { exitCode: 0, stdout: { text: quoteBody(syms.split(',')[0], n) }, stderr: { text: '' } }
+  } }
+  const ctx = makeCtx({ shell: shell2 })
+  const call = await pluginApi(plugin, ctx)
+  for (let i = 0; i < 230; i++) {
+    const sym = 'SH6005' + String(i).padStart(3, '0')
+    await call('quote', { symbols: sym })
+  }
+  const dbg = await call('debug')
+  ok(dbg.data.cacheKeys <= 200, '缓存条目被钳在 200 以内 (' + dbg.data.cacheKeys + ')')
+  // 条目仍可用：第一个请求的缓存已可能被淘汰，但最后一个必然在
+  const r = await call('quote', { symbols: 'SH6005' + String(229).padStart(3, '0') })
+  ok(r.ok, '淘汰后正常请求不受影响')
+}
+
+console.log('== U8 看门狗超时路径 ==')
+{
+  // curl 挂起 31s+：shell.run 永不返回，看门狗 30s 强制释放并报错。
+  // 用未决 Promise 模拟挂起；整体等待上限 35s。
+  const hungShell = { resolve: (s) => s, run: () => new Promise(() => {}) }
+  const plugin = loadPlugin()
+  const ctx = makeCtx({ shell: hungShell })
+  const call = await pluginApi(plugin, ctx)
+  const t0 = Date.now()
+  const r = await Promise.race([
+    call('quote', { symbols: 'SH600519' }),
+    new Promise((res) => setTimeout(() => res({ ok: false, error: 'TEST_TIMEOUT_35S' }), 35000)),
+  ])
+  const dt = Date.now() - t0
+  ok(!r.ok && /timeout|请求超时/.test(r.error) && dt >= 29000 && dt < 34000, '看门狗 30s 超时强制释放 (' + dt + 'ms, ' + (r.error || '').slice(0, 40) + ')')
+  // 槽位释放后管线不冻结：再发一个能成功的请求
+  const okShell = scriptShell([{ match: 'batch/quote', body: quoteBody('SH600519', 42) }])
+  // 换不了 shell（闭包捕获）——用 debug 验证 waiters 归零即可
+  const dbg = await call('debug')
+  ok(dbg.ok && dbg.data.running === 0, '超时后调度槽已释放 (running=' + dbg.data.running + ')')
+}
+
 console.log('== U6 RPC 分发与安全 ==')
 {
   const { call } = await fresh([{ match: 'batch/quote', body: quoteBody('SH600519', 1) }])

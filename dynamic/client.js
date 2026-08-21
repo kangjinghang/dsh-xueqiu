@@ -1398,6 +1398,28 @@ return {
         }
       }, [])
 
+      // 挂载后与视口变化时按真实渲染尺寸钳制徽标位置：
+      // DockGate 恢复时只能按 badgeW 估算宽度（不含边框/极限情况），且窗口缩小后
+      // 旧坐标可能落到屏幕外——这里用 offsetWidth 实测值兜底，保证徽标永远可见
+      const badgeRef = React.useRef(null)
+      React.useEffect(function () {
+        function clamp() {
+          const node = badgeRef.current
+          if (!node || !ui.badgePos) return
+          const w = node.offsetWidth || 0
+          const h = node.offsetHeight || 0
+          if (!w) return
+          const vp = viewport()
+          if (!vp) return
+          const x = Math.min(Math.max(4, Number(ui.badgePos.x)), Math.max(4, vp.w - w - 4))
+          const y = Math.min(Math.max(4, Number(ui.badgePos.y)), Math.max(4, vp.h - h - 4))
+          if (x !== ui.badgePos.x || y !== ui.badgePos.y) ui.set({ badgePos: { x: x, y: y } })
+        }
+        clamp()
+        window.addEventListener('resize', clamp)
+        return function () { try { window.removeEventListener('resize', clamp) } catch (e) { /* ignore */ } }
+      }, [])
+
       function onDown(e) {
         if (e.pointerType === 'mouse' && e.button !== 0) return
         badgeDrag = { x: e.clientX, y: e.clientY }
@@ -1496,6 +1518,7 @@ return {
       }
 
       const badgeEl = el('div', {
+        ref: badgeRef,
         className: 'xq-badge',
         style: style,
         title: '点击开合行情面板 · 拖动调整位置 · 右下角 ⤡ 调宽度（双击复位）',

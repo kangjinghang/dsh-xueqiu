@@ -41,13 +41,17 @@ export function makeCtx(opts = {}) {
   return ctx
 }
 
-// 真实 shell：用本机 curl 跑，shell.resolve/run 语义对齐 DSH shell 服务
+// 真实 shell：用本机 curl 跑，shell.resolve/run 语义对齐 DSH shell 服务。
+// 平台对齐：macOS/Linux 走 /bin/bash -c；Windows 走 pwsh -NoProfile -Command（DSH win32 层同款）。
+const IS_WIN = process.platform === 'win32'
 export function realShell() {
   return {
     resolve: (spec) => spec,
     run: async (spec) => {
       try {
-        const { stdout, stderr } = await run('/bin/bash', ['-c', spec.command], { timeout: spec.timeoutMs, maxBuffer: spec.stdoutMaxBytes || 4 * 1024 * 1024 })
+        const { stdout, stderr } = IS_WIN
+          ? await run('pwsh', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', spec.command], { timeout: spec.timeoutMs, maxBuffer: spec.stdoutMaxBytes || 4 * 1024 * 1024 })
+          : await run('/bin/bash', ['-c', spec.command], { timeout: spec.timeoutMs, maxBuffer: spec.stdoutMaxBytes || 4 * 1024 * 1024 })
         return { exitCode: 0, stdout: { text: stdout }, stderr: { text: stderr || '' } }
       } catch (e) {
         return { exitCode: e.code ?? 1, stdout: { text: e.stdout || '' }, stderr: { text: e.stderr || e.message } }

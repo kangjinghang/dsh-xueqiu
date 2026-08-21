@@ -126,7 +126,7 @@ dsh plugin --profile web add ./dsh-xueqiu
 
 ## 🧪 质量与测试
 
-> **平台要求**：macOS / Linux（插件通过 POSIX shell 调用 curl 获取行情，Windows 的 cmd 引号规则不兼容，暂不支持）。
+> **平台要求**：macOS / Linux / Windows。macOS/Linux 走 POSIX shell curl；Windows 走 DSH 的 PowerShell 层显式调用 `curl.exe`（Win10+ 自带），引号语义天然兼容，已在 GitHub Actions `windows-latest` 上真连雪球全量验证（含匿名 Cookie 播种链路）。
 
 三套互补的自动化测试，每次发版前全部通过（最近一次实测 2026-08-20，macOS + dsh web 3080 端口）：
 
@@ -190,6 +190,8 @@ dsh-xueqiu/
 
 ## 📋 更新日志
 
+- **1.21.0**（2025-08-21）
+  - 新增：**Windows 支持**。DSH 在 Windows 上的 shell 层是 PowerShell（`pwsh -Command`），单引号字面量语义与 POSIX 一致——原先"cmd 引号不兼容"的障碍实际不存在。三处适配：① 显式调用 `curl.exe`（绕开 PS 5.1 中 `curl` = `Invoke-WebRequest` 别名，Win10+ 自带 curl.exe）；② Cookie 播种的 `-o /dev/null` 在 Windows 换成 `NUL`；③ Cookie 请求头剥离引号字符防注入。测试桩 `realShell` 平台对齐（win32 走 pwsh，同 DSH win32 层）。CI 新增 `windows-latest` 任务：单测 + cookie 测试 + live.mjs 真连雪球（51 断言，含匿名播种链路）全绿。README 平台要求同步更正为 macOS / Linux / Windows。
 - **1.20.6**（2025-08-21）
   - 测试：**雪球云端自选接口契约测试进 CI**（`qa/contract.mjs`，7 断言）——直连真实端点验证 `portfolio/list.json` / `portfolio/stock/list.json` / `add.json` / `cancel.json` 契约（含真实 add→cancel 往返后还原）。每日定时（UTC 21:00）用 `XQ_COOKIE` secret 真跑，雪球改接口时这里最先失败，防止 `watch.json` 类"虚构端点"事故重演；无 secret 时（push/PR）自动 skip，同一定时任务顺带跑 live.mjs（51 断言）。需在仓库 Settings → Secrets 配置 `XQ_COOKIE`（浏览器完整 Cookie 请求头，含 `xq_a_token`）。
 - **1.20.5**（2025-08-21）

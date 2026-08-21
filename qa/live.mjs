@@ -117,11 +117,15 @@ console.log('== L5 KOL/用户/财务 ==')
   ok(D(r).list.every((u) => u.screen_name && typeof u.followers_count === 'number'), 'kol 每条有昵称+粉丝数')
 }
 {
-  const kol1 = (A(D(await call('kol', { symbol: 'SH600519' })).list)[0])
-  const r = await call('user', { userId: String(((kol1||{}).id)), count: 3 })
-  // 用户资料必须有；时间线允许 0 条——热议 KOL 可能是注销/私密账号（上游数据正常波动）
-  ok(r.ok && D(r).user, 'user 按 KOL id 拉用户资料')
-  warnIf(A(D(r).posts).length === 0, 'user 时间线 0 条（KOL 可能注销/私密，正常可接受）')
+  // 热议榜实时变动，榜首可能是注销/私密账号：从 top3 里任取一个成功即算链路正常
+  const kols = A(D(await call('kol', { symbol: 'SH600519' })).list).slice(0, 3)
+  let picked = null, posts = 0
+  for (const k of kols) {
+    const r = await call('user', { userId: String((k || {}).id), count: 3 })
+    if (r.ok && D(r).user) { picked = k; posts = A(D(r).posts).length; break }
+  }
+  ok(!!picked, 'user 按 KOL id 拉用户资料（top3 内命中: ' + ((picked || {}).screen_name || '无') + '）')
+  warnIf(posts === 0, 'user 时间线 0 条（KOL 可能注销/私密，正常可接受）')
 }
 {
   const r = await call('finance', { symbol: 'SH600519' })

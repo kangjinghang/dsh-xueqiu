@@ -49,3 +49,24 @@ jobs:
           XQ_COOKIE: ${{ secrets.XQ_COOKIE }}
       - name: Live API test (51 assertions)
         run: node qa/live.mjs
+
+  # Windows 支持：DSH win32 层 shell 为 PowerShell。curl.exe 显式调用绕开 PS 5.1 的
+  # Invoke-WebRequest 别名；live.mjs 走 pwsh realShell 真连雪球（含匿名 Cookie 播种链路）。
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Source sync + syntax gates
+        run: |
+          python scripts/gen-static.py --check
+          node --check src/index.js
+          node --check src/client/index.js
+      - name: Offline unit tests (mock shell, no network)
+        run: |
+          node qa/unit.mjs
+          node qa/cookie.mjs
+      - name: Live API test via pwsh shell (real Xueqiu, anonymous)
+        run: node qa/live.mjs

@@ -4,6 +4,12 @@ return {
     const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     const BASE = 'https://stock.xueqiu.com'
     const SITE = 'https://www.xueqiu.com'
+    // 跨平台：Windows 上 DSH shell 层是 PowerShell（pwsh -Command），单引号字面量语义与 POSIX 一致；
+    // 但 PS 5.1 里 curl 是 Invoke-WebRequest 的别名 → 显式 curl.exe（Win10+ 自带）；
+    // /dev/null 在 Windows 不存在 → NUL。Cookie 值里的引号（正常不会有）剥除以防注入。
+    const WIN = typeof process !== 'undefined' && process.platform === 'win32'
+    const CURL = WIN ? 'curl.exe' : 'curl'
+    const NULL_DEV = WIN ? 'NUL' : '/dev/null'
     const DEFAULT_WATCHLIST = ['SH600519', 'SZ300750', 'SZ002594', 'SH601318', '00700', 'AAPL']
 
     const state = { cookie: '' }
@@ -135,7 +141,7 @@ return {
       let seen = {}
       let pairs = []
       for (let i = 0; i < seedUrls.length; i++) {
-        const cmd = "curl -s -L --max-time 12 -D - -o /dev/null '" + seedUrls[i] + "' -H 'User-Agent: " + UA + "'"
+        const cmd = CURL + " -s -L --max-time 12 -D - -o " + NULL_DEV + " '" + seedUrls[i] + "' -H 'User-Agent: " + UA + "'"
         const spec = shell.resolve({ command: cmd, timeoutMs: 15000, stdoutMaxBytes: 65536 })
         let res = null
         try { res = await shell.run(spec) } catch (e) { res = null }
@@ -168,11 +174,11 @@ return {
       const cookie = opts.cookie !== undefined ? opts.cookie
         : (opts.anonymous || !login) ? await ensureCookie(false)
         : login.cookie
-      let cmd = "curl -s --max-time 12 -X " + (opts.method || 'GET') + " '" + url + "'"
+      let cmd = CURL + " -s --max-time 12 -X " + (opts.method || 'GET') + " '" + url + "'"
       cmd += " -H 'User-Agent: " + UA + "'"
       cmd += " -H 'Referer: https://www.xueqiu.com/'"
       cmd += " -H 'Accept: application/json'"
-      if (cookie) cmd += " -H 'Cookie: " + cookie + "'"
+      if (cookie) cmd += " -H 'Cookie: " + String(cookie).replace(/['"]/g, '') + "'"
       if (opts.body) {
         cmd += " -H 'Content-Type: application/x-www-form-urlencoded' --data '" + String(opts.body).replace(/'/g, '%27') + "'"
       }

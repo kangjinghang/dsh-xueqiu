@@ -42,16 +42,26 @@ export function makeCtx(opts = {}) {
 }
 
 // 真实 shell：用本机 curl 跑，shell.resolve/run 语义对齐 DSH shell 服务。
-// 平台对齐：macOS/Linux 走 /bin/bash -c；Windows 走 pwsh -NoProfile -Command（DSH win32 层同款）。
+// 平台对齐：macOS/Linux 走 /bin/bash -c；Windows 对齐 dsh-pwsh-local 执行器——
+// pwsh 7 优先，缺失回退 powershell.exe(5.1)，且每条命令前置 UTF-8 编码声明
+// （5.1 默认 OEM 代码页会把中文股票名变乱码；pwsh 7 默认 UTF-8 不受影响）。
+// XQ_FORCE_PS51=1 强制走 5.1 回退路径（CI 验证老 Win10 用户环境）。
 const IS_WIN = process.platform === 'win32'
+// 与 dsh-pwsh-local ENCODING_PREAMBLE 同款
+const ENCODING_PREAMBLE = "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); $OutputEncoding = [System.Text.UTF8Encoding]::new($false); "
+function resolvePwshExe() {
+  if (process.env.XQ_FORCE_PS51) return 'powershell.exe'
+  return 'pwsh'
+}
 export function realShell() {
   return {
     resolve: (spec) => spec,
     run: async (spec) => {
       try {
+        const opts = { timeout: spec.timeoutMs, maxBuffer: spec.stdoutMaxBytes || 4 * 1024 * 1024 }
         const { stdout, stderr } = IS_WIN
-          ? await run('pwsh', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', spec.command], { timeout: spec.timeoutMs, maxBuffer: spec.stdoutMaxBytes || 4 * 1024 * 1024 })
-          : await run('/bin/bash', ['-c', spec.command], { timeout: spec.timeoutMs, maxBuffer: spec.stdoutMaxBytes || 4 * 1024 * 1024 })
+          ? await run(resolvePwshExe(), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', ENCODING_PREAMBLE + spec.command], opts)
+          : await run('/bin/bash', ['-c', spec.command], opts)
         return { exitCode: 0, stdout: { text: stdout }, stderr: { text: stderr || '' } }
       } catch (e) {
         return { exitCode: e.code ?? 1, stdout: { text: e.stdout || '' }, stderr: { text: e.stderr || e.message } }

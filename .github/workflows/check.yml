@@ -70,3 +70,9 @@ jobs:
           node qa/cookie.mjs
       - name: Live API test via pwsh shell (real Xueqiu, anonymous)
         run: node qa/live.mjs
+      # 真 Win10 老用户环境：DSH win32 层在无 pwsh 7 时回退 powershell.exe(5.1)。
+      # XQ_FORCE_PS51=1 强制测试桩走同款回退 + UTF-8 编码声明（5.1 OEM 代码页防中文乱码）。
+      - name: Live API test via Windows PowerShell 5.1 fallback (real Xueqiu)
+        run: node qa/live.mjs
+        env:
+          XQ_FORCE_PS51: '1'

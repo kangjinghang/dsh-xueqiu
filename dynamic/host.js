@@ -464,7 +464,7 @@ return {
           const text = await fs.readText(target)
           const parsed = JSON.parse(text)
           if (parsed && Array.isArray(parsed.symbols) && parsed.symbols.length) {
-            watchlist = { symbols: parsed.symbols.slice(0, 200) }
+            watchlist = { symbols: parsed.symbols.slice(0, 200), lastSyncAt: Number(parsed.lastSyncAt) || 0 }
           }
         } catch (e) { /* 首次运行或无写权限时使用默认列表 */ }
       }
@@ -484,7 +484,42 @@ return {
 
     async function actWatchlistGet() {
       const wl = await loadWatchlist()
-      return { symbols: wl.symbols }
+      await maybeAutoSync()   // 登录态：节流后台同步云端自选（云端为准）
+      return { symbols: (watchlist || wl).symbols }
+    }
+
+    // 后台自动同步（登录态 · 云端为准的双端统一）：
+    // - 节流 10 分钟（lastSyncAt 持久化在 .xueqiu-watchlist.json）
+    // - 云端列表直接镜像到本地：网页端加/删都会被跟随
+    // - 本地 add/remove 本就双写云端；若云端写失败，下次同步会被镜像纠正（统一语义）
+    // - 静默失败：cookie 过期等异常不影响 watchlist.get 返回
+    let syncInflight = false
+    const SYNC_INTERVAL_MS = 10 * 60 * 1000
+    async function maybeAutoSync(force) {
+      const lg = await loadLogin()
+      if (!lg || syncInflight) return false
+      const wl = await loadWatchlist()
+      const last = Number(wl.lastSyncAt) || 0
+      if (!force && Date.now() - last < SYNC_INTERVAL_MS) return false
+      syncInflight = true
+      try {
+        const cloud = await fetchCloudWatchlist()
+        if (!cloud.symbols.length) return false   // 空结果不镜像（接口异常/账号无自选都不该清空本地）
+        const cur = wl.symbols
+        const changed = cur.length !== cloud.symbols.length || cloud.symbols.some(function (s, i) { return cur[i] !== s })
+        if (changed) {
+          watchlist = { symbols: cloud.symbols.slice(0, 200), lastSyncAt: Date.now() }
+        } else {
+          wl.lastSyncAt = Date.now()
+          watchlist = wl
+        }
+        await saveWatchlist()
+        return changed
+      } catch (e) {
+        return false   // 静默：debug RPC 可观察 login/cookie 状态
+      } finally {
+        syncInflight = false
+      }
     }
 
     async function actWatchlistAdd(args) {
@@ -676,15 +711,11 @@ return {
       login = { cookie: cookie, uid: uid, screenName: screenName, savedAt: Date.now() }
       cloudPid = null
       await saveLogin()
-      // 登录成功即拉一次云端自选覆盖本地（失败不阻塞登录）
+      // 登录成功即强制同步一次云端自选（云端为准镜像；失败不阻塞登录）
       let symbols = null
       try {
-        const cloud = await fetchCloudWatchlist()
-        if (cloud.symbols && cloud.symbols.length) {
-          watchlist = { symbols: cloud.symbols.slice(0, 200) }
-          await saveWatchlist()
-          symbols = watchlist.symbols
-        }
+        await maybeAutoSync(true)
+        symbols = (watchlist || {}).symbols
       } catch (e) { /* 云端自选拉取失败，保留本地列表 */ }
       return { loggedIn: true, screenName: screenName, uid: uid, symbols: symbols }
     }
@@ -699,10 +730,11 @@ return {
     async function actWatchlistPull() {
       const lg = await loadLogin()
       if (!lg) throw new Error('未登录：请先在「账号」中粘贴 Cookie 登录')
-      const cloud = await fetchCloudWatchlist()
-      if (cloud.symbols.length) {
-        watchlist = { symbols: cloud.symbols.slice(0, 200) }
-        await saveWatchlist()
+      const changed = await maybeAutoSync(true)   // 手动按钮：绕过节流强制同步（云端为准镜像）
+      if (changed === false) {
+        // 同步判定未变化或失败：仍给按钮一个明确的拉取结果
+        const cloud = await fetchCloudWatchlist().catch(function () { return { symbols: [] } })
+        if (!cloud.symbols.length) throw new Error('同步失败：无法获取云端自选（Cookie 可能已过期）')
       }
       return { symbols: (watchlist || {}).symbols || [] }
     }

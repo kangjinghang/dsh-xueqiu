@@ -889,7 +889,7 @@ return {
     const XQ_AGENT_TOOLS = [
       {
         name: 'xueqiu_quote',
-        description: '雪球实时行情（A股/港股/美股/指数）。symbols 用雪球代码：SH600519（贵州茅台）、SZ300750、00700（腾讯港股）、AAPL（美股）、SH000001（上证指数）。逗号分隔，一次最多 20 只。返回现价、涨跌幅、成交量额、市值、市盈率、换手率等。不确定代码时先用 xueqiu_search 查。',
+        description: '获取股票/指数实时行情快照（雪球数据源，支持A股/港股/美股/指数/ETF）。\n\n何时使用：用户问"XX现在多少钱"、"XX今天涨跌多少"、"XX市值/市盈率多少"，或需要多只股票的当前价格做对比、计算持仓市值时。\n\n输入：symbols 为雪球代码，逗号分隔，一次最多 20 只。代码格式：A股 SH600519/SZ300750（贵茅台/宁德），港股 00700（腾讯），美股 AAPL/TSLA，指数 SH000001（上证）。用户只说中文名或 ticker 时，先用 xueqiu_search 查代码。\n\n输出：每只返回 symbol、name、current（现价）、percent（涨跌幅%）、chg（涨跌额）、open/high/low、last_close（昨收）、volume/amount（量/额）、market_capital（市值）、pe_ttm、pb、turnover_rate。港股美股实时，A股盘中实时。',
         parameters: {
           type: 'object',
           properties: {
@@ -916,7 +916,7 @@ return {
       },
       {
         name: 'xueqiu_kline',
-        description: '雪球历史K线（OHLCV+涨跌幅）。period 支持 1m/5m/15m/30m/60m/day/week/month，count 5–250 根（默认 60）。适合分析走势、计算区间涨跌。A股/港股/美股/指数通用。',
+        description: '获取历史K线（OHLCV + 涨跌幅），用于走势分析和技术计算。\n\n何时使用：用户问"XX最近的走势"、"最近一个月涨了多少"，或需要计算均线/区间涨跌幅/波动率等技术指标时。只要最新价格就够的话用 xueqiu_quote，别拉K线。\n\n输入：symbol 为单只雪球代码（如 SH600519）；period 可选 1m/5m/15m/30m/60m/day/week/month（默认 day）；count 5–250 根（默认 60，含最新一根）。\n\n输出：按时间升序的数组，每根含 time（本地时区 ISO）、open/high/low/close、volume、percent（该根涨跌幅%）。可直接用于计算区间涨跌 = (末根 close / 首根前收盘 - 1)。',
         parameters: {
           type: 'object',
           properties: {
@@ -944,7 +944,7 @@ return {
       },
       {
         name: 'xueqiu_search',
-        description: '按名称或代码搜索雪球股票（A股/港股/美股/指数/ETF）。返回代码+名称，结果可直接用于 xueqiu_quote / xueqiu_kline。如 "茅台"、"600519"、"苹果"、"AAPL"。',
+        description: '按名称/拼音/代码搜索雪球证券，把用户口中的股票名解析为雪球代码。\n\n何时使用：用户提到股票中文名（"茅台"、"腾讯"）、ticker（"AAPL"、"TSLA"）或纯代码（"600519"），而你不确定对应的雪球代码时，先调本工具再调 xueqiu_quote / xueqiu_kline。支持A股/港股/美股/指数/ETF。\n\n输入：q 为搜索词（中文名、全拼如 maotai、代码或 ticker）。\n\n输出：候选列表（代码+名称），按相关度排序；同名/近似名多只时取第一条或多条并列让用户确认。',
         parameters: {
           type: 'object',
           properties: {
@@ -962,7 +962,7 @@ return {
       },
       {
         name: 'xueqiu_hot',
-        description: '雪球热门股票榜（按讨论热度）。market: cn=A股(默认) / hk=港股 / us=美股 / global=全球。返回代码、名称、现价、涨跌幅、热度排名变化。适合"今天什么股票最火"类问题。',
+        description: '获取雪球热门股票榜（按社区讨论热度排名，非涨幅榜）。\n\n何时使用：用户问"今天什么股票最火"、"大家在讨论什么股票"、"雪球热榜"，或想了解当前市场关注度集中在哪里时。\n\n输入：market 可选 cn（A股，默认）/ hk（港股）/ us（美股）/ global（全球）；size 1–30 条（默认 10）。\n\n输出：每条含 symbol、name、current、percent、rank_change（排名变化，正数=热度上升）。注意这是热度榜：下跌的股票讨论激烈也会上榜。',
         parameters: {
           type: 'object',
           properties: {
@@ -987,7 +987,7 @@ return {
       },
       {
         name: 'xueqiu_news',
-        description: '雪球 7×24 实时财经快讯（A股/港美股/宏观）。返回最新快讯列表（时间+文本+重要性标记 mark=1 为重要）。max_id 传上一页最旧一条的 id 可翻页。',
+        description: '获取雪球7×24实时财经快讯流（A股/港美股/宏观）。\n\n何时使用：用户问"今天有什么财经新闻"、"盘中有什么消息"、"刚才发生了什么"，或需要市场背景信息辅助解读行情时。\n\n输入：count 1–30 条（默认 15）；max_id 为翻页游标——需要看更早的历史时，传上一页返回的 oldest_id。\n\n输出：按时间降序的快讯数组，每条含 time、text、mark（1=重要，其余为普通）；返回值带 oldest_id 供继续翻页。',
         parameters: {
           type: 'object',
           properties: {
@@ -1012,7 +1012,7 @@ return {
       },
       {
         name: 'xueqiu_kol',
-        description: '某只股票在雪球上讨论最热的投资大V（KOL）。返回昵称、粉丝数、简介。适合"这只股票有哪些大V在关注"类问题。symbol 用雪球代码（如 SH600519）。',
+        description: '查询某只股票在雪球社区讨论最热的投资大V（KOL），了解聪明钱的关注面。\n\n何时使用：用户问"XX有哪些大V在关注"、"雪球上谁在讨论XX"，或想从社区视角评估一只股票的关注质量时。\n\n输入：symbol 为雪球代码（如 SH600519，不确定就用 xueqiu_search 查）；count 1–10 条（默认 8）。\n\n输出：KOL 列表，每条含 screen_name（昵称）、followers_count（粉丝数）、verified（是否认证）、description（简介）。',
         parameters: {
           type: 'object',
           properties: {

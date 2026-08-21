@@ -106,17 +106,29 @@ export default {
       const shell = getShell()
       if (!shell) return ''
       cookieSeeding = (async function () {
-      // 雪球主域 302 → www.xueqiu.com，必须 -L 跟随才能拿到 Set-Cookie
-      const cmd = "curl -s -L --max-time 12 -D - -o /dev/null 'https://www.xueqiu.com/' -H 'User-Agent: " + UA + "'"
-      const spec = shell.resolve({ command: cmd, timeoutMs: 15000, stdoutMaxBytes: 65536 })
-      const res = await shell.run(spec)
-      if (res.exitCode !== 0) return ''
-      const seen = {}
-      const pairs = []
-      const lines = String(res.stdout.text || '').split('\n')
-      for (let i = 0; i < lines.length; i++) {
-        const m = /^set-cookie:\s*([^=;\s]+)=([^;]*)/i.exec(lines[i].trim())
-        if (m && !seen[m[1]]) { seen[m[1]] = true; pairs.push(m[1] + '=' + m[2]) }
+      // 播种 URL 兜底链：/hq 无 WAF 挑战、直接发全套匿名 token（PR#2）；
+      // 首页 / 在部分地区会被阿里云 WAF JS 挑战接管（只发 acw_tc），作第一备选。
+      // 逐个尝试，拿到 xq_a_token 即成功；全部失败返回空串走无 cookie 路径。
+      const seedUrls = [
+        'https://xueqiu.com/hq',
+        'https://www.xueqiu.com/'
+      ]
+      let seen = {}
+      let pairs = []
+      for (let i = 0; i < seedUrls.length; i++) {
+        const cmd = "curl -s -L --max-time 12 -D - -o /dev/null '" + seedUrls[i] + "' -H 'User-Agent: " + UA + "'"
+        const spec = shell.resolve({ command: cmd, timeoutMs: 15000, stdoutMaxBytes: 65536 })
+        let res = null
+        try { res = await shell.run(spec) } catch (e) { res = null }
+        if (!res || res.exitCode !== 0) continue
+        seen = {}
+        pairs = []
+        const lines = String(res.stdout.text || '').split('\n')
+        for (let j = 0; j < lines.length; j++) {
+          const m = /^set-cookie:\s*([^=;\s]+)=([^;]*)/i.exec(lines[j].trim())
+          if (m && !seen[m[1]]) { seen[m[1]] = true; pairs.push(m[1] + '=' + m[2]) }
+        }
+        if (seen.xq_a_token) break // 拿到核心 token，播种成功
       }
       // kline 端点要求 cookie 里存在 u=<id>；优先用种子响应里的真实 u，缺失才补随机值
       if (!seen.u) pairs.push('u=' + String(Date.now()) + String(Math.floor(Math.random() * 1e6)))

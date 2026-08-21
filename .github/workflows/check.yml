@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: '0 21 * * *' # 每天 UTC 21:00（北京 05:00）
 
 jobs:
   static-install-smoke:
@@ -30,3 +32,20 @@ jobs:
         env:
           SMOKE_PORT: 3199
           SMOKE_CI: 1
+
+  # 雪球真实接口契约：无 XQ_COOKIE secret 时自动 skip（push/PR 安全）
+  # 每日定时用 secret Cookie 真跑，雪球改接口时这里最先失败（防 watch.json 类事故）
+  live-contract:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Contract test (cloud watchlist endpoints)
+        run: node qa/contract.mjs
+        env:
+          XQ_COOKIE: ${{ secrets.XQ_COOKIE }}
+      - name: Live API test (51 assertions)
+        run: node qa/live.mjs

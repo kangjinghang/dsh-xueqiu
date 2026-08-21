@@ -190,6 +190,8 @@ dsh-xueqiu/
 
 ## 📋 更新日志
 
+- **1.20.6**（2025-08-21）
+  - 测试：**雪球云端自选接口契约测试进 CI**（`qa/contract.mjs`，7 断言）——直连真实端点验证 `portfolio/list.json` / `portfolio/stock/list.json` / `add.json` / `cancel.json` 契约（含真实 add→cancel 往返后还原）。每日定时（UTC 21:00）用 `XQ_COOKIE` secret 真跑，雪球改接口时这里最先失败，防止 `watch.json` 类"虚构端点"事故重演；无 secret 时（push/PR）自动 skip，同一定时任务顺带跑 live.mjs（51 断言）。需在仓库 Settings → Secrets 配置 `XQ_COOKIE`（浏览器完整 Cookie 请求头，含 `xq_a_token`）。
 - **1.20.5**（2025-08-21）
   - 修复：**云端自选双写从未生效**——此前调用的 `watch.json` 是不存在的端点（WAF 对未知路径统一 403，曾误判为"雪球封禁第三方写入"）。真实端点是 `portfolio/stock/add.json` / `cancel.json`（POST form，symbols 参数）。已修正并经真实账号完整往返验证：插件加自选 → 云端 116 只 ✓ → 插件移除 → 云端还原 115 只 ✓。本地加/删自选恢复真正的双端同步，账号面板与 README 文案同步更正。
 - **1.20.4**（2025-08-21）

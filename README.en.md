@@ -101,6 +101,8 @@ define a plugin with cordis_define (kind: new):
 
 ## Stability design
 
+> **Platform requirement**: macOS / Linux only. The plugin fetches quotes via curl invoked through a POSIX shell; Windows cmd quoting rules are incompatible (not supported for now).
+
 The data layer is defended in depth — safe to leave open for hours:
 
 - **Request gate**: max 2 concurrent, 100ms minimum gap, mirroring the web client's rhythm.
@@ -133,6 +135,7 @@ The data layer is defended in depth — safe to leave open for hours:
 
 ## Changelog
 
+- **1.20.3** (2025-08-21) — **Badge viewport clamping fixed**: the badge no longer stays off-screen after the window shrinks; clamped by real rendered size (borders included) on mount and re-clamped live on resize (browser-verified at 375px/320px viewports). Hardening: 1MB cap on `/xq-rpc` request bodies (413 beyond). Platform requirement documented (macOS/Linux). Completed browser-level UI walkthrough (badge / 4 tabs / search / detail / K-line crosshair / three-tier login error paths) and dynamic-branch protocol verification, with lossless login-state backup-restore.
 - **1.20.2** (2025-08-21) — **3 fixes from a full QA test round**: ① `login.status` now falls back to JWT-decoded uid/screen_name when those fields are missing from the login file; ② the "empty kline" error message no longer misleads as a cookie problem and tells you to check the symbol format; ③ `xueqiu_news` now actually honors the count parameter (the upstream API ignores it and always returns ~10 per page — the tool layer auto-pages with max_id, up to 3 pages). Also added an offline unit-test suite under `qa/` (mock shell, no network, 40 assertions covering throttling/caching/retry chains/cloud-sync semantics/cookie dual-URL fallback/injection guards) wired into GitHub Actions, plus a local live suite `qa/live.mjs` with 51 real-API assertions.
 - **1.20.1** (2025-08-20) — **Agent tool descriptions rewritten**: each of the 6 tools' descriptions expanded into structured form (when to use / input format with examples / output fields), including inter-tool guidance (run `xueqiu_search` first when unsure about a code, use `xueqiu_quote` instead of K-line when only the latest price is needed, hot rank ≠ gainers). Text-only change that directly improves agent tool-selection and parameter accuracy (closing the last gap vs dsh-us-stocks' description depth).
 - **1.20.0** (2025-08-20) — **Automatic watchlist sync for logged-in users (cloud-as-truth)**: panel open / market refresh cycles check in the background; if the last sync is older than 10 minutes, the cloud watchlist is mirrored to local — additions/removals on xueqiu.com or the app propagate to the plugin within 10 minutes. Throttle timestamp is persisted; API failures are silent and never affect quotes; an empty cloud response is never mirrored (guards against accidental wipes). The manual "sync cloud watchlist" button remains and forces an immediate sync.

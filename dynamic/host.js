@@ -864,7 +864,12 @@ return {
               res.writeHead(403); res.end('forbidden'); return
             }
             const chunks = []
-            for await (const c of req) chunks.push(c)
+            let received = 0
+            for await (const c of req) {
+              received += c.length
+              if (received > 1048576) { res.writeHead(413); res.end('payload too large'); return }   // 1MB 上限：防失控本地进程 OOM
+              chunks.push(c)
+            }
             let body = {}
             try { body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') } catch (e) { body = {} }
             const result = await handleCall(body)

@@ -637,7 +637,7 @@ export default {
       } catch (e) { /* 保持内存态 */ }
     }
 
-    // 云端自选股：默认组合 pid 探测 + 股票列表（端点来自 pysnowball api_ref）
+    // 云端自选股：默认组合 pid 探测 + 股票列表（读端点，pysnowball api_ref 同款）
     // 真实账号的默认自选在 stocks 系统分类里（负数 pid，「全部」id=-1 含沪深/港/美股全部），
     // portfolios 字段仅在老接口形态/个人组合账号出现，作为回退。
     function pickCloudPid(data) {
@@ -675,18 +675,16 @@ export default {
     }
 
     // 云端加/删自选（尽力而为：端点为网页端行为，失败静默回退本地）
+    // 云端加/删自选（真实端点：portfolio/stock/add.json / cancel.json，POST form）
+    // 写失败静默（下次云端为准同步会纠正本地），成功则双端一致
     async function cloudWatchAdd(symbol) {
       if (!login) return
-      const pid = await ensureCloudPid()
-      if (!pid) return
-      await curl(BASE + '/v5/stock/watch.json?symbol=' + enc(symbol) + '&pid=' + enc(pid), { method: 'POST', body: 'flag=1' })
+      await curl(BASE + '/v5/stock/portfolio/stock/add.json', { method: 'POST', body: 'symbols=' + enc(symbol) + '&category=1' })
     }
 
     async function cloudWatchDelete(symbol) {
       if (!login) return
-      const pid = await ensureCloudPid()
-      if (!pid) return
-      await curl(BASE + '/v5/stock/watch.json?symbol=' + enc(symbol) + '&pid=' + enc(pid), { method: 'DELETE' })
+      await curl(BASE + '/v5/stock/portfolio/stock/cancel.json', { method: 'POST', body: 'symbols=' + enc(symbol) })
     }
 
     async function actLoginStatus() {

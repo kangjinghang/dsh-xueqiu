@@ -76,11 +76,30 @@ return {
     // ---- TTL 缓存 + in-flight 去重：同一 URL 在途请求共享同一个 Promise ----
     const cache = new Map()   // key -> { at, value }
     const inflight = new Map() // key -> Promise
+    const CACHE_MAX_KEYS = 200
 
     function cacheGet(key, ttl) {
       const e = cache.get(key)
       if (e && ttl > 0 && Date.now() - e.at < ttl) return e.value
       return undefined
+    }
+
+    // 淘汰：kline 的 begin 参数按分钟取整，每分钟产生新 URL → 新条目；不清理则无界泄漏。
+    // 写入时顺手清一轮过期条目（O(n) 但 n 被 200 上限钳住），再按容量兜底删最旧。
+    function cachePut(key, value) {
+      cache.set(key, { at: Date.now(), value: value })
+      if (cache.size > CACHE_MAX_KEYS) {
+        const now = Date.now()
+        for (const k of Array.from(cache.keys())) {
+          const e = cache.get(k)
+          // 无 TTL 元信息（各调用点 ttl 不同）：超过 24h 的条目一律可清
+          if (now - e.at > 86400000) cache.delete(k)
+        }
+      }
+      while (cache.size > CACHE_MAX_KEYS) {
+        const oldest = cache.keys().next().value   // Map 保插入序，最旧在最前
+        cache.delete(oldest)
+      }
     }
 
     function enc(s) {
@@ -223,7 +242,7 @@ return {
       const pending = inflight.get(url)
       if (pending) return pending
       const p = gate(function () { return attempt(0) }).then(function (data) {
-        if (ttl > 0) cache.set(url, { at: Date.now(), value: data })
+        if (ttl > 0) cachePut(url, data)
         return data
       })
       p.then(function () { inflight.delete(url) }, function () { inflight.delete(url) })

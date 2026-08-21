@@ -932,7 +932,7 @@ exports.default = {
           loggedIn
             ? el('div', { key: 'u', className: 'xq-login-user' }, [
                 '当前账号：', el('b', { key: 'b' }, login.screenName || ('uid ' + (login.uid || '?'))),
-                el('span', { key: 'c', className: 'xq-acc-mark' }, ' · 云端自选股已启用，加/删自选会尽力同步')
+                el('span', { key: 'c', className: 'xq-acc-mark' }, ' · 云端为准：加/删自选会在下次同步时被云端覆盖（写接口暂被雪球风控拦截）')
               ])
             : el('div', { key: 'tip', className: 'xq-login-tip' }, [
                 '不登录也能用（匿名模式，自选股存本地）。登录后可直接使用', el('b', { key: 'b' }, '你在雪球的云端自选股'),

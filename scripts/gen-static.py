@@ -50,6 +50,18 @@ c = c.replace(
 assert c.startswith('return {')
 c = 'exports.default = {' + c[len('return {'):]
 
+# ---- vendored KLineChart UMD（Apache-2.0）----
+# 注入 factory 头部：遮蔽 module/exports/define 使 UMD 走 global 分支挂 window.klinecharts。
+# 升级方法：npm pack klinecharts && tar xzf && cp package/dist/umd/klinecharts.min.js assets/
+klc_src = (root / 'assets' / 'klinecharts.min.js').read_text(encoding='utf-8').strip()
+klc_inject = (
+    '    // vendored KLineChart v10 UMD（assets/klinecharts.min.js，Apache-2.0，升级见 gen-static.py 注释）\n'
+    '    ;(function () {\n'
+    '      var module = undefined, exports = undefined, define = undefined\n'
+    + klc_src + '\n'
+    '    }).call(typeof window !== "undefined" ? window : this)\n\n'
+)
+
 client_static = '''// 由 scripts/gen-static.py 从 dynamic/client.js 生成 —— 勿手改；改 dynamic/ 后重新生成。
 // 静态 bundle 格式：classic script 注册到 __ModuleLoader__，factory 为 CJS 形式。
 window.__ModuleLoader__.load({
@@ -69,7 +81,7 @@ window.__ModuleLoader__.load({
       document.head.appendChild(_styleTag)
     }
 
-''' + c + '''
+''' + klc_inject + c + '''
     return module.exports
   }
 })

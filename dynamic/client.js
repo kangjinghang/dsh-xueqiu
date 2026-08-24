@@ -145,6 +145,8 @@ return {
       '.xq-tip-k{color:var(--dsw-alias-label-secondary);}\n' +
       '.xq-chart-labels{display:flex;justify-content:space-between;font-size:10.5px;color:var(--dsw-alias-label-secondary);margin-top:2px;}\n' +
       '.xq-ma-legend{display:flex;gap:10px;font-size:10.5px;color:var(--dsw-alias-label-secondary);}\n' +
+      '.xq-klc{height:264px;width:100%;min-width:0;}\n' +
+      '.xq-klc-min{height:216px;}\n' +
       '.xq-kol{display:flex;flex-wrap:wrap;gap:6px;}\n' +
       '.xq-kol-chip{font-size:12px;padding:4px 10px;border-radius:14px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);cursor:pointer;}\n' +
       '.xq-kol-chip:hover{border-color:var(--dsw-alias-brand-primary);}\n' +
@@ -314,326 +316,284 @@ return {
     // 面板高度拖拽引用（实例唯一，避免组件重渲染丢失状态）
     const dockResize = { active: false, startY: 0, startH: 0, h: 0, body: null }
 
-    // ---------- K线蜡烛图（成交量 + 均线 + 十字光标/悬浮详情 + 滚轮缩放/拖拽平移） ----------
-    // 交互模型（借鉴 dsh-stock-terminal）：
-    //   - rows 为完整缓冲（详情页拉 500 根）；视图窗口 [off, off+cnt) 默认尾部 120 根
-    //   - 滚轮：以鼠标锚点为中心缩放（20~500 根），锚定数据不漂移
-    //   - 拖拽：水平平移窗口，越界钳制；松手后若窗口左缘距缓冲头部 <60 根且还有历史，自动追加拉取
-    //   - 双击：复位为尾部 120 根
+    // ---------- 图表引擎：KLineChart v10（canvas；UMD 由 gen-static.py 注入静态形态，动态会话无库时降级提示） ----------
+    // 选型对比（2026-08，实测 gzip 体积）：KLineChart 10.0.2 59.8KB vs lightweight-charts 5.2.1 62.3KB vs ECharts ~330KB。
+    // 胜出理由：零依赖、A股原生观感（红涨绿跌）、内置 MA/VOL 指标与十字光标 legend、dataLoader 反向加载直接对接左拖拉历史。
+    function klcLib() {
+      try { return (typeof window !== 'undefined' && window.klinecharts) || null } catch (e) { return null }
+    }
+
+    function cssVarColor(name, fallback) {
+      try {
+        const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+        return v || fallback
+      } catch (e) { return fallback }
+    }
+
+    // canvas 不能用 CSS 变量，主题色在 init/主题变化时解析为具体色值
+    function klcPalette() {
+      return {
+        up: cssVarColor('--dsw-alias-state-error-primary', '#ef4444'),
+        down: cssVarColor('--dsw-alias-state-success-primary', '#22c55e'),
+        grid: cssVarColor('--dsw-alias-border-l2', 'rgba(128,128,128,0.25)'),
+        text: cssVarColor('--dsw-alias-label-secondary', '#8a8f98'),
+        warn: cssVarColor('--dsw-alias-state-warn-primary', '#f59e0b')
+      }
+    }
+
+    function klcStyles(kind, pal) {
+      const s = {
+        grid: { horizontal: { color: pal.grid }, vertical: { show: false } },
+        candle: {
+          bar: {
+            upColor: pal.up, downColor: pal.down, noChangeColor: pal.text,
+            upBorderColor: pal.up, downBorderColor: pal.down, noChangeBorderColor: pal.text,
+            upWickColor: pal.up, downWickColor: pal.down, noChangeWickColor: pal.text
+          },
+          priceMark: {
+            high: { color: pal.text }, low: { color: pal.text },
+            last: { upColor: pal.up, downColor: pal.down, noChangeColor: pal.text, text: { color: pal.text } }
+          }
+        },
+        indicator: {
+          bars: [{ upColor: pal.up, downColor: pal.down, noChangeColor: pal.text }],
+          lines: [{ color: pal.warn }, { color: '#3b82f6' }, { color: '#a855f7' }],
+          tooltip: { show: false }   // 指标数值走蜡烛 legend，避免双份
+        },
+        xAxis: { axisLine: { color: pal.grid }, tickLine: { color: pal.grid }, tickText: { color: pal.text } },
+        yAxis: { axisLine: { color: pal.grid }, tickLine: { color: pal.grid }, tickText: { color: pal.text } },
+        separator: { color: pal.grid },
+        crosshair: {
+          horizontal: { line: { color: pal.text }, text: { backgroundColor: pal.text } },
+          vertical: { line: { color: pal.text }, text: { backgroundColor: pal.text } }
+        }
+      }
+      if (kind === 'minute') {
+        // 分时：面积图 + 昨收虚线 + 均价线（xq-minute 指标），涨跌色由调用方按收盘定
+        s.candle.type = 'area'
+        s.candle.area = { lineSize: 1.4, lineColor: pal.up, backgroundColor: 'rgba(239,68,68,0.10)', value: 'close', smooth: false }
+        s.candle.priceMark = { high: { color: pal.text }, low: { color: pal.text }, last: { upColor: pal.up, downColor: pal.down, noChangeColor: pal.text, text: { color: pal.text } } }
+      }
+      return s
+    }
+
+    // 通用图表生命周期：init + 主题监听 + 尺寸自适应，返回清理函数
+    function klcSetup(K, boxRef, kind) {
+      const chart = K.init(boxRef.current, { styles: klcStyles(kind, klcPalette()) })
+      if (!chart) return null
+      let ro = null
+      try {
+        ro = new ResizeObserver(function () { chart.resize() })
+        ro.observe(boxRef.current)
+      } catch (e) { /* 旧环境无 RO */ }
+      let mo = null
+      try {
+        mo = new MutationObserver(function () { chart.setStyles(klcStyles(kind, klcPalette())) })
+        mo.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme'] })
+      } catch (e) { /* 忽略 */ }
+      return {
+        chart: chart,
+        dispose: function () {
+          if (ro) ro.disconnect()
+          if (mo) mo.disconnect()
+          try { K.dispose(boxRef.current) } catch (e) { /* 忽略 */ }
+        }
+      }
+    }
+
+    function klcNoLib() {
+      return el('div', { className: 'xq-muted', style: { padding: '24px 0', textAlign: 'center' } },
+        '图表引擎（KLineChart）未加载：静态安装形态自带，动态调试会话不含 vendored 库')
+    }
+
+    // rows 归一化：面板行为 {timestamp(ms),open,high,low,close,volume}；卡片行为 {time(ISO),...} → 补 timestamp
+    function klcNormRows(rows) {
+      return (rows || []).map(function (r) {
+        if (r.timestamp) return r
+        const t = r.time ? Date.parse(r.time) : NaN
+        return Object.assign({}, r, { timestamp: isNaN(t) ? 0 : t })
+      }).filter(function (r) { return r.timestamp > 0 })
+    }
+
+    function klcPrecision(rows, hint) {
+      if (hint != null) return hint
+      try {
+        const s = String(rows.length ? rows[rows.length - 1].close : '')
+        const d = (s.split('.')[1] || '').length
+        return Math.max(0, Math.min(4, d || 2))
+      } catch (e) { return 2 }
+    }
+
+    // ---------- K线蜡烛图（KLineChart：内置 MA/VOL、滚轮缩放、拖拽平移、左拖自动加载更早历史） ----------
     function KlineChart(props) {
-      const all = props.rows || []
-      const fetchMore = props.onNeedEarlier || null
-      const [hi, setHi] = React.useState(null)
-      // 视图窗口状态：off=窗口起点索引（0=最新端），cnt=窗口根数
-      const [win, setWin] = React.useState({ off: 0, cnt: 120 })
-      const winRef = React.useRef(win)
-      winRef.current = win
-      // 数据长度变化（换股/换周期/追加历史）时复位窗口，但追加场景保留用户的窗口位置
-      const lastLenRef = React.useRef(0)
-      const grewRef = React.useRef(false)
-      if (lastLenRef.current !== all.length) {
-        grewRef.current = lastLenRef.current > 0 && all.length > lastLenRef.current
-        lastLenRef.current = all.length
-        if (!grewRef.current) {
-          // 非追加（换股/换周期/首次）：复位为尾部 120
-          if (winRef.current.off !== 0 || winRef.current.cnt !== 120) setWin({ off: 0, cnt: 120 })
-        }
-      }
-      // 钳制窗口到当前缓冲
-      const total = all.length
-      let off = Math.min(Math.max(0, win.off), Math.max(0, total - 5))
-      let cnt = Math.min(Math.max(20, win.cnt), Math.max(20, total))
-      if (off + cnt > total) off = Math.max(0, total - cnt)
-      const rows = all.slice(off, off + cnt)
-      if (!rows.length) return el('div', { className: 'xq-muted' }, '暂无K线数据')
-      const W = 640, MAIN = 150, VOL = 44, PAD = 6, GAP = 4, LBL = 14
-      const H = MAIN + VOL + GAP + PAD + LBL
-      let min = Infinity, max = -Infinity
-      for (let i = 0; i < rows.length; i++) {
-        const rlo = Number(rows[i].low), rhi = Number(rows[i].high)
-        if (rlo < min) min = rlo
-        if (rhi > max) max = rhi
-      }
-      if (!isFinite(min) || !isFinite(max) || min === max) { min -= 1; max += 1 }
-      const range = max - min
-      const n = rows.length
-      const step = (W - PAD * 2) / n
-      const bw = Math.max(step * 0.66, 1)
-      const yOf = function (v) { return PAD + (1 - (v - min) / range) * (MAIN - PAD * 2) }
-      const vTop = PAD + MAIN + GAP
-      const vBottom = H - PAD - LBL
-      const vH = vBottom - vTop
-      let vmax = 0
-      for (let i = 0; i < rows.length; i++) {
-        const v = Number(rows[i].volume) || 0
-        if (v > vmax) vmax = v
-      }
-      if (!vmax) vmax = 1
-      function maArr(nn) {
-        const out = []
-        for (let i = 0; i < rows.length; i++) {
-          if (i < nn - 1) { out.push(null); continue }
-          let s = 0
-          for (let j = i - nn + 1; j <= i; j++) s += Number(rows[j].close)
-          out.push(s / nn)
-        }
-        return out
-      }
-      const ma5 = maArr(5), ma10 = maArr(10), ma20 = maArr(20)
-      function poly(arr, color) {
-        const pts = []
-        for (let i = 0; i < arr.length; i++) {
-          if (arr[i] === null || arr[i] === undefined) continue
-          const x = PAD + step * i + step / 2
-          const y = yOf(arr[i])
-          pts.push(x.toFixed(1) + ',' + y.toFixed(1))
-        }
-        if (pts.length < 2) return null
-        return el('polyline', { key: color, points: pts.join(' '), fill: 'none', stroke: color, strokeWidth: 1 })
-      }
-      const kids = []
-      for (let i = 0; i < n; i++) {
-        const r = rows[i]
-        const up = Number(r.close) >= Number(r.open)
-        const color = upColor(up)
-        const x = PAD + step * i + step / 2
-        const yh = yOf(Number(r.high)), yl = yOf(Number(r.low))
-        const yo = yOf(Number(r.open)), yc = yOf(Number(r.close))
-        const top = Math.min(yo, yc)
-        const hgt = Math.max(Math.abs(yc - yo), 1)
-        kids.push(el('line', { key: 'w' + i, x1: x, y1: yh, x2: x, y2: yl, stroke: color, strokeWidth: 1 }))
-        kids.push(el('rect', { key: 'c' + i, x: x - bw / 2, y: top, width: bw, height: hgt, fill: color }))
-        const vh = Math.max(vH * (Number(r.volume) || 0) / vmax, 0.5)
-        kids.push(el('rect', { key: 'v' + i, x: x - bw / 2, y: vBottom - vh, width: bw, height: vh, fill: color, opacity: 0.45 }))
-      }
-      const last = rows[n - 1]
-      // ---- 缩放/平移：坐标换算（px→数据索引） ----
-      const pxToIdx = function (px) {
-        let i = Math.floor((px - PAD) / step)
-        if (i < 0) i = 0
-        if (i > n - 1) i = n - 1
-        return i
-      }
-      // 拖拽状态存 ref：off 为拖拽起点时的窗口 off，px0 为起点像素
-      const dragRef = React.useRef(null)
-      function onMove(e) {
-        const rect = e.currentTarget.getBoundingClientRect()
-        if (!rect || !rect.width) return
-        if (dragRef.current) {
-          // 拖拽平移：像素位移换算为根数（step 为 svg 单位，需按显示宽度比例折算）
-          const dispPerData = rect.width / W * step
-          if (dispPerData <= 0) return
-          const moved = Math.round((e.clientX - dragRef.current.px0) / dispPerData)
-          // 向右拖 → 看更早历史 → off 增大
-          let noff = dragRef.current.off0 + moved
-          if (noff < 0) noff = 0
-          const maxOff = Math.max(0, total - Math.min(cnt, total))
-          if (noff > maxOff) noff = maxOff
-          if (noff !== win.off) setWin({ off: noff, cnt: cnt })
-          return
-        }
-        const px = (e.clientX - rect.left) / rect.width * W
-        setHi(pxToIdx(px))
-      }
-      function onDown(e) {
-        const rect = e.currentTarget.getBoundingClientRect()
-        if (!rect || !rect.width) return
-        dragRef.current = { px0: e.clientX, off0: off }
-        setHi(null)
-        e.preventDefault()
-      }
-      function onUp() {
-        if (!dragRef.current) return
-        dragRef.current = null
-        // 距缓冲头部不足 60 根且有拉取通道 → 请求更早历史（host 侧再拉 500 根合并）
-        if (fetchMore && total - (off + cnt) < 60 && total >= 490) {
-          fetchMore(total)
-        }
-      }
-      function onWheel(e) {
-        const rect = e.currentTarget.getBoundingClientRect()
-        if (!rect || !rect.width) return
-        e.preventDefault()
-        e.stopPropagation()
-        const px = (e.clientX - rect.left) / rect.width * W
-        const anchor = pxToIdx(px)           // 锚点在窗口内的索引
-        const anchorData = off + anchor      // 锚点在缓冲中的索引
-        const factor = e.deltaY > 0 ? 1.15 : 1 / 1.15   // 滚轮下=缩小（窗口变大）
-        let ncnt = Math.round(cnt * factor)
-        if (ncnt < 20) ncnt = 20
-        if (ncnt > total) ncnt = total
-        if (ncnt === cnt) return
-        // 保持锚点相对显示位置不动：anchor/oldCnt ≈ (anchorData-noff)/ncnt
-        let noff = Math.round(anchorData - anchor / cnt * ncnt)
-        if (noff < 0) noff = 0
-        if (noff + ncnt > total) noff = Math.max(0, total - ncnt)
-        setWin({ off: noff, cnt: ncnt })
-      }
-      function onDblClick() {
-        dragRef.current = null
-        setWin({ off: 0, cnt: Math.min(120, Math.max(20, total)) })
-      }
-      let cross = null, tip = null
-      if (hi !== null && hi >= 0 && hi < n) {
-        const r = rows[hi]
-        const cx = PAD + step * hi + step / 2
-        const cy = yOf(Number(r.close))
-        // 轴标签：光标价位（右侧底色块）+ 日期（底部底色块）
-        const priceTxt = fmt(Number(r.close))
-        const pLblW = priceTxt.length * 5.6 + 8
-        const dateTxt = fmtFullDay(r.timestamp).slice(5)   // MM-DD
-        const dLblW = dateTxt.length * 5.6 + 8
-        cross = [
-          el('line', { key: 'cv', x1: cx, y1: PAD, x2: cx, y2: vBottom, stroke: 'var(--dsw-alias-label-secondary)', strokeWidth: 0.6, strokeDasharray: '3 3', opacity: 0.7 }),
-          el('line', { key: 'ch', x1: PAD, y1: cy, x2: W - PAD, y2: cy, stroke: 'var(--dsw-alias-label-secondary)', strokeWidth: 0.6, strokeDasharray: '3 3', opacity: 0.7 }),
-          el('rect', { key: 'pbg', x: W - PAD - pLblW, y: cy - 7, width: pLblW, height: 14, rx: 3, fill: 'var(--dsw-alias-bg-layer-2)', stroke: 'var(--dsw-alias-border-l2)', strokeWidth: 0.5 }),
-          el('text', { key: 'ptx', x: W - PAD - pLblW / 2, y: cy + 3.5, fontSize: 9, textAnchor: 'middle', fill: 'var(--dsw-alias-label-primary)' }, priceTxt),
-          el('rect', { key: 'dbg', x: Math.min(Math.max(PAD, cx - dLblW / 2), W - PAD - dLblW), y: vBottom + 1, width: dLblW, height: 13, rx: 3, fill: 'var(--dsw-alias-bg-layer-2)', stroke: 'var(--dsw-alias-border-l2)', strokeWidth: 0.5 }),
-          el('text', { key: 'dtx', x: Math.min(Math.max(PAD, cx - dLblW / 2), W - PAD - dLblW) + dLblW / 2, y: vBottom + 10.5, fontSize: 9, textAnchor: 'middle', fill: 'var(--dsw-alias-label-primary)' }, dateTxt)
-        ]
-        tip = el('div', {
-          key: 'tip', className: 'xq-tip',
-          style: { left: (cx / W * 100) + '%', transform: cx > W * 0.55 ? 'translateX(calc(-100% - 10px))' : 'translateX(10px)' }
-        }, [
-          el('div', { key: 'd', className: 'xq-tip-d' }, fmtFullDay(r.timestamp)),
-          el('div', { key: 'r1', className: 'xq-tip-r' }, [
-            el('span', { key: 'a' }, [el('span', { key: 'k', className: 'xq-tip-k' }, '开 '), fmt(r.open)]),
-            el('span', { key: 'b' }, [el('span', { key: 'k', className: 'xq-tip-k' }, '高 '), fmt(r.high)]),
-            el('span', { key: 'c' }, [el('span', { key: 'k', className: 'xq-tip-k' }, '低 '), fmt(r.low)]),
-            el('span', { key: 'e', className: colorOf(r.percent) }, [el('span', { key: 'k', className: 'xq-tip-k' }, '收 '), fmt(r.close)])
-          ]),
-          el('div', { key: 'r2', className: 'xq-tip-r' }, [
-            el('span', { key: 'p', className: colorOf(r.percent) }, [el('span', { key: 'k', className: 'xq-tip-k' }, '涨跌 '), fmtPct(r.percent)]),
-            el('span', { key: 'v' }, [el('span', { key: 'k', className: 'xq-tip-k' }, '量 '), fmtVol(r.volume)])
-          ]),
-          el('div', { key: 'r3', className: 'xq-tip-r' }, [
-            el('span', { key: 'm5', style: { color: '#f59e0b' } }, 'MA5 ' + (ma5[hi] === null ? '--' : fmt(ma5[hi]))),
-            el('span', { key: 'm10', style: { color: '#3b82f6' } }, 'MA10 ' + (ma10[hi] === null ? '--' : fmt(ma10[hi]))),
-            el('span', { key: 'm20', style: { color: '#a855f7' } }, 'MA20 ' + (ma20[hi] === null ? '--' : fmt(ma20[hi])))
-          ])
-        ])
-      }
+      const rows = props.rows || []
+      const onNeedEarlier = props.onNeedEarlier || null
+      const boxRef = React.useRef(null)
+      const [noLib, setNoLib] = React.useState(false)
+      const propsRef = React.useRef(null)
+      propsRef.current = { rows: rows, onNeedEarlier: onNeedEarlier }
+
+      React.useEffect(function () {
+        const K = klcLib()
+        if (!K || !boxRef.current) { setNoLib(true); return undefined }
+        const h = klcSetup(K, boxRef, 'kline')
+        if (!h) { setNoLib(true); return undefined }
+        const chart = h.chart
+        let busy = false
+        // 顺序要求（实测 v10）：setPeriod → setSymbol → setDataLoader。若 setSymbol 在 setPeriod 之前，
+        // 两者各触发一次 init 导致数据重复叠加；setPeriod 必须设置，否则 crosshair 不触发。
+        const pm = { '5m': { type: 'minute', span: 5 }, '15m': { type: 'minute', span: 15 }, '30m': { type: 'minute', span: 30 }, '60m': { type: 'hour', span: 1 }, day: { type: 'day', span: 1 }, week: { type: 'week', span: 1 }, month: { type: 'month', span: 1 } }
+        chart.setPeriod(pm[props.period] || { type: 'day', span: 1 })
+        chart.setSymbol({ ticker: props.symbol || 'xq', pricePrecision: klcPrecision(rows, props.precision), volumePrecision: 2 })
+        chart.setDataLoader({
+          getBars: function (params) {
+            const done = params.callback
+            if (params.type === 'init') {
+              done(klcNormRows(propsRef.current.rows), { forward: true, backward: false })
+              return
+            }
+            // v10 语义（源码 _processDataLoad/_addData）：'backward'=锚定最后一根、concat 到尾部，即拉"更新"数据
+            // （盘中右缘新K线）；'forward'=锚定第一根、前插，即拉"更早"历史（左拖触底）。A股场景无实时增量，backward 恒空。
+            if (params.type !== 'forward' || busy) { done([], { forward: false, backward: false }); return }
+            const fetch = propsRef.current.onNeedEarlier
+            if (!fetch) { done([], { forward: false, backward: false }); return }
+            busy = true
+            Promise.resolve(fetch(params.timestamp)).then(function (fresh) {
+              busy = false
+              const add = (fresh || []).filter(function (r) { return r.timestamp < params.timestamp })
+              done(add, { forward: add.length > 0, backward: false })
+            }, function () { busy = false; done([], { forward: false, backward: false }) })
+          }
+        })
+        chart.createIndicator('MA')
+        chart.createIndicator('VOL')
+        chart.setOffsetRightDistance(16)
+        return h.dispose
+      }, [])
+
+      if (noLib) return klcNoLib()
+      const norm = rows.length && !rows[0].timestamp ? klcNormRows(rows) : rows
       return el('div', { className: 'xq-chart-wrap' }, [
-        tip,
-        el('svg', {
-          key: 's', className: 'xq-chart xq-chart-pan', viewBox: '0 0 ' + W + ' ' + H,
-          onMouseMove: onMove, onMouseLeave: function () { dragRef.current = null; setHi(null) },
-          onMouseDown: onDown, onMouseUp: onUp,
-          onWheel: onWheel, onDoubleClick: onDblClick
-        }, [
-          el('line', { key: 'base', x1: PAD, y1: vTop, x2: W - PAD, y2: vTop, stroke: 'var(--dsw-alias-border-l2)', strokeWidth: 1 }),
-          poly(ma5, '#f59e0b'),
-          poly(ma10, '#3b82f6'),
-          poly(ma20, '#a855f7'),
-          kids,
-          cross,
-          el('text', { key: 'hiT', x: PAD, y: 10, fontSize: 9, fill: 'var(--dsw-alias-label-secondary)' }, '高 ' + fmt(max)),
-          el('text', { key: 'loT', x: PAD, y: MAIN - 2, fontSize: 9, fill: 'var(--dsw-alias-label-secondary)' }, '低 ' + fmt(min)),
-          el('text', { key: 'lastT', x: W - PAD, y: Math.max(yOf(Number(last.close)) - 4, 10), fontSize: 9, fill: upColor(Number(last.close) >= Number(rows[n - 2] ? rows[n - 2].close : last.open)), textAnchor: 'end' }, fmt(last.close))
-        ]),
+        el('div', { key: 'c', ref: boxRef, className: 'xq-klc' }),
         el('div', { key: 'lb', className: 'xq-chart-labels' }, [
-          el('span', { key: 'd' }, fmtDay(rows[0].timestamp) + ' ~ ' + fmtDay(last.timestamp)),
-          el('span', { key: 'ma', className: 'xq-ma-legend' }, [
-            el('span', { key: 'm5', style: { color: '#f59e0b' } }, 'MA5'),
-            el('span', { key: 'm10', style: { color: '#3b82f6' } }, 'MA10'),
-            el('span', { key: 'm20', style: { color: '#a855f7' } }, 'MA20'),
-            el('span', { key: 'n' }, cnt + '/' + total + ' 根 · 滚轮缩放 · 拖动平移 · 双击复位')
-          ])
+          el('span', { key: 'd' }, norm.length ? fmtDay(norm[0].timestamp) + ' ~ ' + fmtDay(norm[norm.length - 1].timestamp) : ''),
+          el('span', { key: 'n' }, norm.length + ' 根 · 滚轮缩放 · 左拖加载更早 · 双击回最新')
         ])
       ])
     }
 
-    // ---------- 分时图（十字光标/悬浮详情） ----------
+    // ---------- 分时图（面积价线 + 昨收虚线 + 均价线 + 十字光标 tooltip） ----------
     function MinuteChart(props) {
       const items = props.items || []
+      const lastClose = Number(props.lastClose) || 0
+      const boxRef = React.useRef(null)
+      const wrapRef = React.useRef(null)
+      const [noLib, setNoLib] = React.useState(false)
       const [hi, setHi] = React.useState(null)
-      const lastClose = Number(props.lastClose)
-      if (!items.length) return el('div', { className: 'xq-muted' }, '暂无分时数据')
-      const W = 640, CH = 170, LBL = 14, H = CH + LBL, PAD = 6   // CH 图区 + LBL 底部时间标签条
-      let min = Infinity, max = -Infinity
-      for (let i = 0; i < items.length; i++) {
-        const c = Number(items[i].current)
-        if (c < min) min = c
-        if (c > max) max = c
-      }
-      if (lastClose) { if (lastClose < min) min = lastClose; if (lastClose > max) max = lastClose }
-      if (!isFinite(min) || !isFinite(max) || min === max) { min -= 1; max += 1 }
-      const range = max - min
-      const yOf = function (v) { return PAD + (1 - (v - min) / range) * (CH - PAD * 2) }
-      const xOf = function (i) { return PAD + (i / (items.length - 1)) * (W - PAD * 2) }
-      const pricePts = []
-      const avgPts = []
-      for (let i = 0; i < items.length; i++) {
-        pricePts.push(xOf(i).toFixed(1) + ',' + yOf(Number(items[i].current)).toFixed(1))
-        const avg = Number(items[i].avg_price) || Number(items[i].current)
-        avgPts.push(xOf(i).toFixed(1) + ',' + yOf(avg).toFixed(1))
-      }
-      const last = Number(items[items.length - 1].current)
-      const up = lastClose ? (last >= lastClose) : true
-      const stroke = upColor(up)
-      const yBase = lastClose ? yOf(lastClose) : null
-      function onMove(e) {
-        if (items.length < 2) return
-        const rect = e.currentTarget.getBoundingClientRect()
-        if (!rect || !rect.width) return
-        const px = (e.clientX - rect.left) / rect.width * W
-        let i = Math.round((px - PAD) / (W - PAD * 2) * (items.length - 1))
-        if (i < 0) i = 0
-        if (i > items.length - 1) i = items.length - 1
-        setHi(i)
-      }
-      let cross = null, tip = null
-      if (hi !== null && hi >= 0 && hi < items.length) {
-        const it = items[hi]
-        const cx = xOf(hi), cy = yOf(Number(it.current))
-        const pct = lastClose ? (Number(it.current) - lastClose) / lastClose * 100 : null
-        // 轴标签：光标价位（右侧）+ 时间（底部）
-        const priceTxt = fmt(Number(it.current))
-        const pLblW = priceTxt.length * 5.6 + 8
-        const timeTxt = it.timestamp ? fmtTime(it.timestamp) : ''
-        const dLblW = timeTxt.length * 5.6 + 8
-        cross = [
-          el('line', { key: 'cv', x1: cx, y1: PAD, x2: cx, y2: CH - PAD, stroke: 'var(--dsw-alias-label-secondary)', strokeWidth: 0.6, strokeDasharray: '3 3', opacity: 0.7 }),
-          el('line', { key: 'ch', x1: PAD, y1: cy, x2: W - PAD, y2: cy, stroke: 'var(--dsw-alias-label-secondary)', strokeWidth: 0.6, strokeDasharray: '3 3', opacity: 0.7 }),
-          el('rect', { key: 'pbg', x: W - PAD - pLblW, y: cy - 7, width: pLblW, height: 14, rx: 3, fill: 'var(--dsw-alias-bg-layer-2)', stroke: 'var(--dsw-alias-border-l2)', strokeWidth: 0.5 }),
-          el('text', { key: 'ptx', x: W - PAD - pLblW / 2, y: cy + 3.5, fontSize: 9, textAnchor: 'middle', fill: 'var(--dsw-alias-label-primary)' }, priceTxt),
-          el('rect', { key: 'dbg', x: Math.min(Math.max(PAD, cx - dLblW / 2), W - PAD - dLblW), y: CH + 1, width: dLblW, height: 13, rx: 3, fill: 'var(--dsw-alias-bg-layer-2)', stroke: 'var(--dsw-alias-border-l2)', strokeWidth: 0.5 }),
-          el('text', { key: 'dtx', x: Math.min(Math.max(PAD, cx - dLblW / 2), W - PAD - dLblW) + dLblW / 2, y: CH + 10.5, fontSize: 9, textAnchor: 'middle', fill: 'var(--dsw-alias-label-primary)' }, timeTxt)
-        ]
+      const baseRef = React.useRef({ lastClose: lastClose })
+      baseRef.current = { lastClose: lastClose }
+
+      React.useEffect(function () {
+        const K = klcLib()
+        if (!K || !boxRef.current) { setNoLib(true); return undefined }
+        // 自定义指标：昨收虚线 + 均价线（series normal，不干扰价格轴刻度）
+        if (K.getSupportedIndicators().indexOf('xq-minute') < 0) {
+          K.registerIndicator({
+            name: 'xq-minute', shortName: '分时', series: 'normal',
+            calc: function (dataList) {
+              const base = baseRef.current.lastClose
+              return dataList.map(function (d) {
+                return { avg: Number(d.avg_price != null ? d.avg_price : d.close), base: base }
+              })
+            },
+            figures: [
+              { key: 'base', title: '昨收: ', type: 'line', styles: function () { return { style: 'dashed', size: 1, color: cssVarColor('--dsw-alias-label-secondary', '#8a8f98') } } },
+              { key: 'avg', title: '均价: ', type: 'line', styles: function () { return { style: 'solid', size: 1, color: cssVarColor('--dsw-alias-state-warn-primary', '#f59e0b') } } }
+            ]
+          })
+        }
+        const h = klcSetup(K, boxRef, 'minute')
+        if (!h) { setNoLib(true); return undefined }
+        const chart = h.chart
+        // 数据映射：分时 items → KLineData（current 充当 o/h/l/c；avg_price/pct 挂扩展字段供指标与 tooltip 用）
+        const toBars = function (list, lclose) {
+          return (list || []).map(function (it) {
+            const c = Number(it.current)
+            const pct = lclose ? (c - lclose) / lclose * 100 : (it.percent != null ? Number(it.percent) : null)
+            return {
+              timestamp: Number(it.timestamp), open: c, high: Number(it.high) || c, low: Number(it.low) || c, close: c,
+              volume: Number(it.volume) || 0, avg_price: it.avg_price, pct: pct
+            }
+          }).filter(function (d) { return d.timestamp > 0 })
+        }
+        const barsRef = { v: toBars(items, lastClose) }
+        // 顺序要求（实测 v10）：setPeriod → setSymbol → setDataLoader（挂载 loader 触发唯一一次 init；
+        // 不 setPeriod 则 crosshair 不触发，setSymbol 先于 setPeriod 会双 init 重复叠加数据）
+        chart.setPeriod({ type: 'minute', span: 1 })
+        chart.setSymbol({ ticker: props.symbol || 'xq', pricePrecision: klcPrecision(barsRef.v, props.precision), volumePrecision: 2 })
+        chart.setDataLoader({
+          getBars: function (params) {
+            if (params.type === 'init') params.callback(barsRef.v, { backward: false, forward: false })
+            else params.callback([], { backward: false, forward: false })
+          }
+        })
+        const last = items.length ? Number(items[items.length - 1].current) : 0
+        const up = lastClose ? last >= lastClose : true
+        // 涨跌色改面积线色（palette up 色对A股即"涨"）
+        chart.setStyles({ candle: { type: 'area', area: { lineColor: up ? klcPalette().up : klcPalette().down, backgroundColor: up ? 'rgba(239,68,68,0.10)' : 'rgba(34,197,94,0.10)' } } })
+        chart.createIndicator('xq-minute')
+        // 分时固定视角：禁缩放拖拽，全部笔数铺满宽度
+        chart.setZoomEnabled(false)
+        chart.setScrollEnabled(false)
+        chart.setOffsetRightDistance(4)
+        if (items.length > 1 && boxRef.current.clientWidth) {
+          chart.setBarSpace(Math.max(boxRef.current.clientWidth / (items.length + 6), 0.1))
+        }
+        // v10.0.2 的 onCrosshairChange 事件只带 {x,y,paneId}（文档声称的 kLineData 字段实际未填），
+        // 用 convertFromPixel 反查 dataIndex，再从自有 bars 取明细
+        chart.subscribeAction('onCrosshairChange', function (d) {
+          if (!d || typeof d.x !== 'number') { setHi(null); return }
+          let p = null
+          try { const r = chart.convertFromPixel([{ x: d.x, y: d.y }]); p = r && r[0] } catch (e) { /* 忽略 */ }
+          const di = p && typeof p.dataIndex === 'number' ? p.dataIndex : -1
+          if (di >= 0 && di < barsRef.v.length) setHi({ r: barsRef.v[di], x: d.x })
+          else setHi(null)
+        })
+        return function () {
+          try { chart.unsubscribeAction('onCrosshairChange') } catch (e) { /* 忽略 */ }
+          h.dispose()
+        }
+      }, [])
+
+      if (noLib) return klcNoLib()
+      // 十字光标 tooltip（沿用 .xq-tip 卡片）
+      let tip = null
+      if (hi && hi.r) {
+        const r = hi.r
+        const pct = r.pct != null ? Number(r.pct) : null
+        const wrapW = (wrapRef.current && wrapRef.current.offsetWidth) || 640
+        const x = typeof hi.x === 'number' ? hi.x : 0
         tip = el('div', {
           key: 'tip', className: 'xq-tip',
-          style: { left: (cx / W * 100) + '%', transform: cx > W * 0.55 ? 'translateX(calc(-100% - 10px))' : 'translateX(10px)' }
+          style: { left: x + 'px', transform: x > wrapW * 0.55 ? 'translateX(calc(-100% - 10px))' : 'translateX(10px)' }
         }, [
-          el('div', { key: 'd', className: 'xq-tip-d' }, fmtDay(it.timestamp) + ' ' + fmtTime(it.timestamp)),
+          el('div', { key: 'd', className: 'xq-tip-d' }, fmtTime(r.timestamp)),
           el('div', { key: 'r1', className: 'xq-tip-r' }, [
-            el('span', { key: 'p', className: colorOf(pct) }, [el('span', { key: 'k', className: 'xq-tip-k' }, '价 '), fmt(it.current)]),
-            el('span', { key: 'a' }, [el('span', { key: 'k', className: 'xq-tip-k' }, '均价 '), fmt(it.avg_price)]),
+            el('span', { key: 'p', className: colorOf(pct) }, [el('span', { key: 'k', className: 'xq-tip-k' }, '价 '), fmt(r.close)]),
+            el('span', { key: 'a' }, [el('span', { key: 'k', className: 'xq-tip-k' }, '均价 '), fmt(r.avg_price)]),
             el('span', { key: 'g', className: colorOf(pct) }, [el('span', { key: 'k', className: 'xq-tip-k' }, '涨跌 '), fmtPct(pct)])
           ])
         ])
       }
-      const kids = [
-        yBase !== null ? el('line', { key: 'base', x1: PAD, y1: yBase, x2: W - PAD, y2: yBase, stroke: 'var(--dsw-alias-border-l2)', strokeWidth: 1, strokeDasharray: '3 3' }) : null,
-        el('polyline', { key: 'avg', points: avgPts.join(' '), fill: 'none', stroke: 'var(--dsw-alias-state-warn-primary)', strokeWidth: 1 }),
-        el('polyline', { key: 'p', points: pricePts.join(' '), fill: 'none', stroke: stroke, strokeWidth: 1.6 }),
-        cross,
-        el('text', { key: 'hiT', x: PAD, y: 10, fontSize: 9, fill: 'var(--dsw-alias-label-secondary)' }, '高 ' + fmt(max)),
-        el('text', { key: 'loT', x: PAD, y: H - 4, fontSize: 9, fill: 'var(--dsw-alias-label-secondary)' }, '低 ' + fmt(min)),
-        el('text', { key: 'lastT', x: W - PAD, y: Math.max(yOf(last) - 4, 10), fontSize: 9, fill: stroke, textAnchor: 'end' }, fmt(last))
-      ]
-      return el('div', { className: 'xq-chart-wrap' }, [
+      return el('div', { className: 'xq-chart-wrap', ref: wrapRef }, [
         tip,
-        el('svg', {
-          key: 's', className: 'xq-chart', viewBox: '0 0 ' + W + ' ' + H,
-          onMouseMove: onMove, onMouseLeave: function () { setHi(null) }
-        }, kids),
+        el('div', { key: 'c', ref: boxRef, className: 'xq-klc xq-klc-min' }),
         el('div', { key: 'lb', className: 'xq-chart-labels' }, [
-          el('span', { key: 'd' }, fmtDay(items[0].timestamp) + ' 分时'),
+          el('span', { key: 'd' }, items.length ? fmtDay(items[0].timestamp) + ' 分时' : ''),
           el('span', { key: 'n' }, items.length + ' 笔')
         ])
       ])
     }
-
     // ---------- 面板内容（数据 + tabs + 详情） ----------
     function XueqiuPanel() {
       const [watchlist, setWatchlist] = React.useState([])
@@ -756,28 +716,17 @@ return {
         }
       }, [marketOpen])
 
-      // K线历史追加：拖到缓冲头部时拉更早的 500 根，按 timestamp 去重合并（升序）
-      function fetchEarlierKline(haveCount) {
-        if (!view || !detail || !detail.kline) return
+      // K线历史获取（纯函数，不碰 React 状态）：图表左拖触底时拉更早的 500 根，返回原始行；
+      // 图表内部自行前插持有全部历史，React 缓冲始终只是初始窗口（避免双数据源互相反馈）。
+      function fetchEarlierKline(earliestTs) {
+        if (!view || !detail || !detail.kline) return []
         const cur = detail.kline.rows || []
-        if (!cur.length) return
-        const earliest = cur[0].timestamp
+        const begin = earliestTs || (cur.length ? cur[0].timestamp : 0)
+        if (!begin) return []
         // 以当前最早一根为 begin 的近似：多拉 500 根（count 负值=含 begin 往前），host 侧 type:'before' 返回区间
-        call('kline', { symbol: view, period: klinePeriod, count: 500, begin: earliest }).then(function (res) {
-          const fresh = (res && res.rows) || []
-          if (!fresh.length) return
-          setDetail(function (d) {
-            if (!d || !d.kline) return d
-            const seen = {}
-            d.kline.rows.forEach(function (r) { seen[r.timestamp] = true })
-            const add = fresh.filter(function (r) { return !seen[r.timestamp] })
-            if (!add.length) return d
-            const merged = d.kline.rows.concat(add)
-            merged.sort(function (a, b) { return a.timestamp - b.timestamp })
-            if (merged.length > 3000) merged.splice(0, merged.length - 3000)   // 上限防膨胀
-            return Object.assign({}, d, { kline: { rows: merged } })
-          })
-        }).catch(function () { /* 追加失败静默：窗口仍可看已有缓冲 */ })
+        return call('kline', { symbol: view, period: klinePeriod, count: 500, begin: begin }).then(function (res) {
+          return (res && res.rows) || []
+        }).catch(function () { return [] /* 追加失败静默：图表仍可看已有缓冲 */ })
       }
 
       React.useEffect(function () {
@@ -1099,8 +1048,8 @@ return {
               })()) : null
             ]),
             chartMode === 'kline'
-              ? el(KlineChart, { key: 'c', rows: kl.rows, onNeedEarlier: fetchEarlierKline })
-              : el(MinuteChart, { key: 'c', items: mn.items, lastClose: mn.last_close })
+              ? el(KlineChart, { key: 'k' + view + klinePeriod, symbol: view, period: klinePeriod, rows: kl.rows, onNeedEarlier: fetchEarlierKline })
+              : el(MinuteChart, { key: 'm' + view, symbol: view, items: mn.items, lastClose: mn.last_close })
           ]),
           firstFin ? el('div', { key: 'fin', className: 'xq-card' }, [
             el('div', { key: 't', className: 'xq-card-t' }, '财务指标 · ' + (firstFin.report_name || '')),
@@ -1657,7 +1606,7 @@ return {
           el('span', { key: 'g', className: 'xq-tv-pct ' + (chgPct > 0 ? 'xq-up' : chgPct < 0 ? 'xq-down' : ''), style: { marginLeft: 'auto' } },
             fmt(last.close) + '  ' + (chgPct >= 0 ? '+' : '') + chgPct.toFixed(2) + '%')
         ]),
-        el(KlineChart, { key: 'c', rows: rows })
+        el(KlineChart, { key: 'c' + rows.length, symbol: String(r.symbol || ''), rows: rows })
       ])
     }
 

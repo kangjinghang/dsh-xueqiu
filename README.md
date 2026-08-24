@@ -190,6 +190,9 @@ dsh-xueqiu/
 
 ## 📋 更新日志
 
+- **1.21.7**（2025-08-24）
+  - 修复：**越屏钳制改为逐渲染执行**。1.21.6 的"effect 依赖 badgePos + ResizeObserver"方案在 CI 慢环境仍漏过"渲染后才长高"的时序（数据异步到达→徽章长高→无重触发钳制）。现在 `useLayoutEffect` 每次渲染后钳制（数据到达必伴随重渲染，无时序死角；ui.set 仅在有变更时触发下一轮，收敛不循环）。CI 实测踩坑修复。
+  - 新增：**浏览器 E2E 进 CI**（`browser-e2e` job）。此前这层（唯一抓到过钳制死代码真 bug 的测试）只在本机手动跑。`scripts/e2e-ci-boot.sh` 合成"已完成引导"的隔离 DSH 实例（settings 跳过 onboarding + workspace 表 + 含完整一轮对话的逐行 zstd 会话日志——踩坑记录：DSH 逐记录写日志，每 zstd 帧恰好一行；slug 规则 cwd 去首 `/`、余 `/`→`-`、两端包 `--`），agent-browser 跑全部 18 项断言。E2E 脚本兜底：全新实例无活动对话时先展开会话分组再点开一个会话（conversation.input.dock 槽需要对话视图）。
 - **1.21.6**（2025-08-24）
   - 修复：**徽章越屏钳制是死代码**。挂载后的实测钳制 `useEffect` 依赖为 `[]`，只在首帧跑一次——而 hydrate 异步恢复 badgePos 发生在其后，钳制永远空跑；DockGate 恢复时的估算宽度（badgeW 空时按 320）又偏小，实测 346px。后果：恢复越屏坐标后徽章右/下缘出屏，真实鼠标点击落空，面板打不开（热榜/快讯/搜索随之全空）。修复：effect 依赖加 badgePos（hydrate 后按实测尺寸再钳一次）+ ResizeObserver 监听徽章自身长高长宽再钳。浏览器回归连跑 3 轮 18 项全绿。
   - 测试：浏览器回归脚本修两处不稳定——① `agent-browser dblclick` 的两次点击间隔超出系统双击判定阈值（页面 dblclick 监听计数为 0），改派发 dblclick 事件；② 交互步骤前 rpc 固定徽章到视口中部再刷新，消除"上一轮遗留位置导致真实鼠标命中失败"的漂移。

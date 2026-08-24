@@ -97,5 +97,49 @@ if (!before.has) {
   console.log('  ⚠️ 测试标的已在云端自选，跳过 cancel 还原验证')
 }
 
+// ---- 3. 写失败契约：无效代码 add / 不存在代码 cancel / 坏 Cookie 写 ----
+// 验证上游对异常输入的行为是"显式拒绝或幂等"，绝不静默污染云端列表。
+console.log('== C3 写失败契约 ==')
+{
+  const BAD = 'ZZ999999' // 无效市场前缀，不可能真实存在
+  const before = fetchList(pid)
+
+  // 3a. add 无效代码：要么被拒（data !== true），要么接受但列表不变（不静默污染）
+  let addBad = null
+  try { addBad = JSON.parse(curl('/v5/stock/portfolio/stock/add.json', 'POST', 'symbols=' + enc(BAD) + '&category=1')) } catch (e) { addBad = { parse_error: String(e.message) } }
+  const afterAddBad = fetchList(pid)
+  ok(addBad.data !== true || afterAddBad.length === before.length,
+    'add 无效代码被拒或列表不变 (resp=' + JSON.stringify(addBad).slice(0, 60) + ', ' + before.length + '→' + afterAddBad.length + ')')
+  // 万一上游真的接受了无效代码：立即清掉，避免污染用户列表
+  if (addBad.data === true && afterAddBad.length > before.length) {
+    try { curl('/v5/stock/portfolio/stock/cancel.json', 'POST', 'symbols=' + enc(BAD)) } catch (e) { /* 忽略 */ }
+    console.log('  ⚠️ 上游接受了无效代码并已回滚删除')
+  }
+
+  // 3b. cancel 列表中不存在的代码：应幂等成功，且不动用户其他持仓
+  const base3b = fetchList(pid)
+  const NOT_IN = base3b.some((s) => (s.stock_symbol || s.symbol) === BAD) ? 'ZZ888888' : BAD
+  let cancelMiss = null
+  try { cancelMiss = JSON.parse(curl('/v5/stock/portfolio/stock/cancel.json', 'POST', 'symbols=' + enc(NOT_IN))) } catch (e) { cancelMiss = { parse_error: String(e.message) } }
+  const afterCancelMiss = fetchList(pid)
+  ok(afterCancelMiss.length === base3b.length,
+    'cancel 不存在代码不动列表 (' + JSON.stringify(cancelMiss).slice(0, 40) + ', ' + base3b.length + '→' + afterCancelMiss.length + ')')
+
+  // 3c. 坏 Cookie 写：必须被显式拒绝（写接口绝不允许匿名/无效态静默通过）
+  let raw = ''
+  try {
+    raw = execFileSync('curl', ['-s', '--max-time', '12', '-X', 'POST', BASE + '/v5/stock/portfolio/stock/add.json',
+      '-H', 'User-Agent: ' + UA, '-H', 'Referer: https://www.xueqiu.com/',
+      '-H', 'Accept: application/json', '-H', 'Cookie: xq_a_token=invalid_token_for_contract_test',
+      '-H', 'Content-Type: application/x-www-form-urlencoded', '--data', 'symbols=' + enc(SYMBOL) + '&category=1'],
+      { encoding: 'utf8', timeout: 15000 })
+  } catch (e) { raw = '' }
+  let badCookie = null
+  try { badCookie = JSON.parse(raw) } catch (e) { badCookie = null }
+  ok(!badCookie || badCookie.data !== true, '坏 Cookie 写被拒 (resp=' + String(raw).slice(0, 60) + ')')
+  if (!before.has) ok(!fetchList(pid).some((s) => (s.stock_symbol || s.symbol) === SYMBOL), '坏 Cookie 写未产生副作用（列表不含测试标的）')
+  else console.log('  ⚠️ 测试标的本就在云端自选，跳过副作用断言')
+}
+
 console.log('\n' + (fail === 0 ? '✅' : '❌') + ` contract: ${pass} passed, ${fail} failed`)
 process.exit(fail === 0 ? 0 : 1)

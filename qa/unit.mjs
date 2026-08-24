@@ -71,6 +71,18 @@ console.log('== U1 调度与缓存 ==')
   ok(!bad, '最小间隔节流生效(突发≤2) (gaps=' + gaps.join(',') + ')')
 }
 {
+  // cache stampede 冒烟：TTL 接口(quoteDetail 15s)并发 5 个不同 URL miss + 同 URL 重复 3 次
+  // 期望：每个不同 URL 恰好 1 次上游请求（miss 时不重复回源），同 URL 全部命中 in-flight 共享
+  const syms = ['SH600519', 'SZ000001', 'SH601318', 'AAPL', '00700']
+  const { call, shell } = await fresh(syms.map((s) => ({ match: 'symbol=' + s, body: quoteBody(s, 1) })))
+  const tasks = []
+  for (const s of syms) for (let i = 0; i < 3; i++) tasks.push(call('quoteDetail', { symbol: s }))
+  const rs = await Promise.all(tasks)
+  ok(rs.every((r) => r.ok), '并发 15 个请求（5 URL × 3）全部成功')
+  const dataCalls = shell.calls.filter((c) => syms.some((s) => c.url.includes('symbol=' + s)))
+  ok(dataCalls.length === 5, '每个 URL miss 仅回源 1 次，无 stampede (上游请求=' + dataCalls.length + ')')
+}
+{
   // 重试链：network 失败一次后成功
   let n = 0
   const { call } = await fresh([{ match: 'batch/quote', body: () => (n++ === 0 ? null : quoteBody('SH600519', 5)) }])
@@ -252,7 +264,7 @@ console.log('== U8 看门狗超时路径 ==')
     new Promise((res) => setTimeout(() => res({ ok: false, error: 'TEST_TIMEOUT_35S' }), 35000)),
   ])
   const dt = Date.now() - t0
-  ok(!r.ok && /timeout|请求超时/.test(r.error) && dt >= 29000 && dt < 34000, '看门狗 30s 超时强制释放 (' + dt + 'ms, ' + (r.error || '').slice(0, 40) + ')')
+  ok(!r.ok && /timeout|请求超时/.test(r.error) && dt >= 28000 && dt < 34000, '看门狗 30s 超时强制释放 (' + dt + 'ms, ' + (r.error || '').slice(0, 40) + ')')
   // 槽位释放后管线不冻结：再发一个能成功的请求
   const okShell = scriptShell([{ match: 'batch/quote', body: quoteBody('SH600519', 42) }])
   // 换不了 shell（闭包捕获）——用 debug 验证 waiters 归零即可

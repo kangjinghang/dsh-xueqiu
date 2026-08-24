@@ -1402,36 +1402,35 @@ return {
       // DockGate 恢复时只能按 badgeW 估算宽度（不含边框/极限情况），且窗口缩小后
       // 旧坐标可能落到屏幕外——这里用 offsetWidth 实测值兜底，保证徽标永远可见
       const badgeRef = React.useRef(null)
+      function clampBadge() {
+        const node = badgeRef.current
+        if (!node || !ui.badgePos) return
+        const w = node.offsetWidth || 0
+        const h = node.offsetHeight || 0
+        if (!w) return
+        const vp = viewport()
+        if (!vp) return
+        const x = Math.min(Math.max(4, Number(ui.badgePos.x)), Math.max(4, vp.w - w - 4))
+        const y = Math.min(Math.max(4, Number(ui.badgePos.y)), Math.max(4, vp.h - h - 4))
+        if (x !== ui.badgePos.x || y !== ui.badgePos.y) ui.set({ badgePos: { x: x, y: y } })
+      }
+      // 每次渲染后钳制：数据异步到达→徽章长高→重渲染，逐渲染钳制无时序死角
+      // （仅依赖挂载一次/ResizeObserver 的方案在慢环境漏过"渲染后才长高"的场景，CI 实测踩坑）。
+      // ui.set 仅在有变更时触发下一次渲染，收敛后不再循环。
+      React.useLayoutEffect(clampBadge)
       React.useEffect(function () {
-        function clamp() {
-          const node = badgeRef.current
-          if (!node || !ui.badgePos) return
-          const w = node.offsetWidth || 0
-          const h = node.offsetHeight || 0
-          if (!w) return
-          const vp = viewport()
-          if (!vp) return
-          const x = Math.min(Math.max(4, Number(ui.badgePos.x)), Math.max(4, vp.w - w - 4))
-          const y = Math.min(Math.max(4, Number(ui.badgePos.y)), Math.max(4, vp.h - h - 4))
-          if (x !== ui.badgePos.x || y !== ui.badgePos.y) ui.set({ badgePos: { x: x, y: y } })
-        }
-        clamp()
-        window.addEventListener('resize', clamp)
-        // 徽章内容（行情/热榜/快讯）异步加载后会"长高/长宽"——挂载瞬间的 offsetHeight 偏小，
-        // 一次性钳制会让后来长高的徽章下缘出屏。ResizeObserver 监听徽章自身尺寸变化再钳。
+        window.addEventListener('resize', clampBadge)
         let ro = null
         try {
-          ro = new ResizeObserver(function () { clamp() })
-          ro.observe(node)
-        } catch (e) { /* 无 ResizeObserver 时退化为 resize 事件 + 挂载时一次 */ }
+          const node = badgeRef.current
+          ro = new ResizeObserver(function () { clampBadge() })
+          if (node) ro.observe(node)
+        } catch (e) { /* 无 ResizeObserver 时退化为 resize 事件 + 每渲染钳制 */ }
         return function () {
-          try { window.removeEventListener('resize', clamp) } catch (e) { /* ignore */ }
+          try { window.removeEventListener('resize', clampBadge) } catch (e) { /* ignore */ }
           try { if (ro) ro.disconnect() } catch (e) { /* ignore */ }
         }
-        // deps 含 badgePos：hydrate 是异步的，首次挂载时 badgePos 尚为 null（clamp 空跑），
-        // DockGate 恢复/拖拽提交都会 set badgePos 触发重渲染——必须在此后用实测尺寸再钳一次。
-        // 固定 [] 会让本钳制成为死代码（v1.21.6 修复：估算宽度偏小时徽章右/下缘出屏无人兜底）。
-      }, [ui.badgePos && ui.badgePos.x, ui.badgePos && ui.badgePos.y])
+      }, [])
 
       function onDown(e) {
         if (e.pointerType === 'mouse' && e.button !== 0) return

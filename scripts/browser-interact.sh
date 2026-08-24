@@ -104,7 +104,10 @@ agent-browser click ".xq-badge" >/dev/null 2>&1; sleep 3
 # 兜底：全新实例没有活动对话时 conversation.input.dock 槽不渲染（徽章点击无面板）——
 # 点侧边栏第一个会话建立对话视图后再点徽章。本地实例已有活动对话时第一次即成功，不碰侧边栏。
 if ! ev '(document.querySelector(".xq-dock")?"1":"0")' | grep -q '"1"'; then
-  ev '(function(){var t=Array.from(document.querySelectorAll("[role=treeitem]")).filter(function(e){return e.getAttribute("aria-level")!=="1"||e.querySelector("button,img")===null?false:true});var items=Array.from(document.querySelectorAll("[role=treeitem]"));var leaf=items.filter(function(e){return !e.querySelector("[role=treeitem]")}).pop();if(leaf){leaf.dispatchEvent(new MouseEvent("click",{bubbles:true}));return "opened-session"}return "no-session"})()' >/dev/null
+  # 先展开可能收起的分组（收起时子会话不在 DOM），再点最深层叶子会话
+  ev '(function(){var gs=Array.from(document.querySelectorAll("[role=treeitem][aria-expanded=false]"));gs.forEach(function(g){g.dispatchEvent(new MouseEvent("click",{bubbles:true}))});return gs.length})()' >/dev/null
+  sleep 2
+  ev '(function(){var items=Array.from(document.querySelectorAll("[role=treeitem]"));var leaf=items.filter(function(e){return !e.querySelector("[role=treeitem]")}).pop();if(leaf){leaf.dispatchEvent(new MouseEvent("click",{bubbles:true}));return "opened-session"}return "no-session"})()' >/dev/null
   sleep 4
   agent-browser click ".xq-badge" >/dev/null 2>&1; sleep 3
 fi

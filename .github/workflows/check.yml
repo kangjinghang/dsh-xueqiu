@@ -87,8 +87,8 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - name: Install dsh CLI + agent-browser
-        run: npm i -g @deepseek-ai/dsh agent-browser
+      - name: Install dsh CLI + pnpm + agent-browser
+        run: npm i -g @deepseek-ai/dsh pnpm agent-browser
       - name: Install Chromium for agent-browser
         run: npx playwright install chromium --with-deps
       - name: Boot synthetic DSH instance + run browser E2E

@@ -204,6 +204,8 @@ console.log('== U4 登录校验 ==')
   const files2 = { '.xueqiu-login.json': JSON.stringify({ cookie: 'xq_a_token=t; xq_id_token=' + mk({ uid: 42, cn: '测试', exp: Math.floor(Date.now() / 1000) + 9999 }) }) }
   const c2 = await (async () => { const p = loadPlugin(); const cx = makeCtx({ files: files2 }); return pluginApi(p, cx) })()
   const st2 = await c2('login.status')
+  // 排障防错位（v1.21.5）：status 必须暴露真实文件路径，避免"插件写 A、排查查 B"
+  ok(typeof st2.data.path === 'string' && st2.data.path.includes('.xueqiu-login.json'), 'status 暴露登录文件真实路径 (' + st2.data.path + ')')
   // F1 已修复: 登录文件缺 uid/screen_name 字段时回退到 jwt 解码值
   ok(st2.data.loggedIn === true && st2.data.screenName === '测试' && st2.data.uid === 42, 'JWT 有效: 中文昵称解码 + uid 回退')
 }

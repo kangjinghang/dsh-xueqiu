@@ -18,12 +18,26 @@ const BASE = 'https://stock.xueqiu.com'
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
 
 // ---- Cookie 解析 ----
+// 多候选探测：插件实际写入的位置由运行时 workspaceRoot 决定（随会话变化），
+// 本脚本按优先级探测多个位置，避免"插件写 A、测试查 B"的错位（v1.21.5 修复的教训）。
+function readCookieFile(p) {
+  try {
+    const f = JSON.parse(readFileSync(p, 'utf8'))
+    return (f && f.cookie) || null
+  } catch { return null }
+}
 function resolveCookie() {
   if (process.env.XQ_COOKIE) return process.env.XQ_COOKIE.trim()
-  try {
-    const f = JSON.parse(readFileSync(join(homedir(), '.xueqiu-login.json'), 'utf8'))
-    return f.cookie || null
-  } catch { return null }
+  const candidates = [
+    join(homedir(), '.xueqiu-login.json'),
+    join(process.cwd(), '.xueqiu-login.json'),                    // 从插件工作区目录运行时
+    join(process.cwd(), '..', '.xueqiu-login.json'),              // 会话根 = 工作区父目录的常见布局
+  ]
+  for (const p of candidates) {
+    const c = readCookieFile(p)
+    if (c && c.includes('xq_a_token')) { console.log('  cookie 来源: ' + p); return c }
+  }
+  return null
 }
 const cookie = resolveCookie()
 if (!cookie || !cookie.includes('xq_a_token')) {

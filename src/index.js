@@ -616,14 +616,22 @@ export default {
       return c.replace(/[\r\n]+/g, ' ').trim()
     }
 
-    async function loadLogin() {
-      if (login !== null) return login
+    // 登录文件路径由运行时 workspaceRoot 决定（随会话变化）——排障时绝不靠猜，
+    // login.status 会把这个真实路径暴露出去。
+    async function loginFilePath() {
       const fs = ctx.get('fs')
       const sp = ctx.get('sandboxPolicy')
       const root = sp && sp.workspaceRoot ? sp.workspaceRoot : null
-      if (fs && root) {
+      if (!fs || !root) return null
+      try { return await fs.resolve('.xueqiu-login.json', { cwd: root }) } catch (e) { return null }
+    }
+
+    async function loadLogin() {
+      if (login !== null) return login
+      const fs = ctx.get('fs')
+      const target = await loginFilePath()
+      if (fs && target) {
         try {
-          const target = await fs.resolve('.xueqiu-login.json', { cwd: root })
           const text = await fs.readText(target)
           const parsed = JSON.parse(text)
           if (parsed && parsed.cookie && /xq_a_token=/.test(parsed.cookie)) login = parsed
@@ -634,11 +642,9 @@ export default {
 
     async function saveLogin() {
       const fs = ctx.get('fs')
-      const sp = ctx.get('sandboxPolicy')
-      const root = sp && sp.workspaceRoot ? sp.workspaceRoot : null
-      if (!fs || !root) return
+      const target = await loginFilePath()
+      if (!fs || !target) return
       try {
-        const target = await fs.resolve('.xueqiu-login.json', { cwd: root })
         await fs.writeText(target, JSON.stringify(login || {}))
       } catch (e) { /* 保持内存态 */ }
     }
@@ -695,7 +701,8 @@ export default {
 
     async function actLoginStatus() {
       const lg = await loadLogin()
-      if (!lg) return { loggedIn: false }
+      const path = await loginFilePath()
+      if (!lg) return { loggedIn: false, path: path }
       // 本地 JWT 过期预检：过期则提示重登（不自动清除，等用户确认）
       let expired = false
       const jar = cookieJar(lg.cookie)
@@ -708,7 +715,7 @@ export default {
         if (!uid) uid = jwt.uid || null
         if (!screenName) screenName = String(jwt.cn || jwt.screen_name || jwt.name || '')
       }
-      return { loggedIn: !expired, expired: expired, screenName: screenName, uid: uid }
+      return { loggedIn: !expired, expired: expired, screenName: screenName, uid: uid, path: path, savedAt: lg.savedAt || null }
     }
 
     async function actLoginSave(args) {

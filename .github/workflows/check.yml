@@ -76,3 +76,27 @@ jobs:
         run: node qa/live.mjs
         env:
           XQ_FORCE_PS51: '1'
+
+  # 浏览器 E2E：合成引导的隔离 DSH 实例 + agent-browser(Playwright Chromium headless)
+  # 覆盖：徽章挂载/拖拽/调宽/面板四 tab/越屏钳制——2025-08-24 这层抓到过"钳制死代码"真 bug，
+  # 此前只在本机手动跑。browser-interact.sh 已带全新实例兜底（自动点开侧边栏会话）。
+  browser-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Install dsh CLI + agent-browser
+        run: npm i -g @deepseek-ai/dsh agent-browser
+      - name: Install Chromium for agent-browser
+        run: npx playwright install chromium --with-deps
+      - name: Boot synthetic DSH instance + run browser E2E
+        run: |
+          bash scripts/e2e-ci-boot.sh
+          BASE_URL=http://127.0.0.1:3210 bash scripts/browser-interact.sh
+        env:
+          DSH_HOME_DIR: /tmp/xq-e2e-home
+          WORKSPACE_DIR: /tmp/xq-e2e-home/ws
+          E2E_PLUGIN_DIR: ${{ github.workspace }}
+          E2E_PORT: '3210'

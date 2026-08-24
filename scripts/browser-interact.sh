@@ -101,6 +101,13 @@ BW=$(rpc '{"action":"ui.get","args":{}}' | grep -o '"badgeW":[0-9]*' | grep -o '
 # ---- 4. 面板开关 + 四 tab ----
 echo "-- 面板与 tab"
 agent-browser click ".xq-badge" >/dev/null 2>&1; sleep 3
+# 兜底：全新实例没有活动对话时 conversation.input.dock 槽不渲染（徽章点击无面板）——
+# 点侧边栏第一个会话建立对话视图后再点徽章。本地实例已有活动对话时第一次即成功，不碰侧边栏。
+if ! ev '(document.querySelector(".xq-dock")?"1":"0")' | grep -q '"1"'; then
+  ev '(function(){var t=Array.from(document.querySelectorAll("[role=treeitem]")).filter(function(e){return e.getAttribute("aria-level")!=="1"||e.querySelector("button,img")===null?false:true});var items=Array.from(document.querySelectorAll("[role=treeitem]"));var leaf=items.filter(function(e){return !e.querySelector("[role=treeitem]")}).pop();if(leaf){leaf.dispatchEvent(new MouseEvent("click",{bubbles:true}));return "opened-session"}return "no-session"})()' >/dev/null
+  sleep 4
+  agent-browser click ".xq-badge" >/dev/null 2>&1; sleep 3
+fi
 R=$(ev '(function(){var d=document.querySelector(".xq-dock");if(!d)return "NO_DOCK";return Array.prototype.map.call(document.querySelectorAll(".xq-tab"),function(x){return x.textContent}).join(",")})()')
 [ "$R" = '"行情,热榜,搜索,快讯"' ] && pass "面板打开 + 四 tab 齐全" || fail "面板/tab 异常 ($R)"
 agent-browser eval '(function(){var t=document.querySelectorAll(".xq-tab");for(var i=0;i<t.length;i++)if(t[i].textContent==="热榜")t[i].click()})()' >/dev/null; sleep 5

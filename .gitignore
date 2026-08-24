@@ -2,3 +2,6 @@ node_modules/
 dist/
 .DS_Store
 *.log
+.xueqiu-ui-state.json
+.xueqiu-login.json
+.xueqiu-watchlist.json

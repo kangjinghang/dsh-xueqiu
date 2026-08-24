@@ -66,11 +66,14 @@ sed -e "s#SESSION_ID#$SID#g" -e "s#WORKSPACE_DIR#$WS_ABS#g" -e "s#CREATED_AT#$NO
 while IFS= read -r line; do printf '%s\n' "$line" | zstd -q -c >> "$D/session.jsonl.zstd"; done < "$H/session-tmp.jsonl"
 rm -f "$H/session-tmp.jsonl"
 
-# 4. 安装被测插件并启动（对齐 static-smoke 的启动方式）
-(cd "$H" && DSH_HOME="$H" "$DSH_BIN" plugin --profile web add "$E2E_PLUGIN_DIR" >/dev/null 2>&1) || {
-  # E2E_PLUGIN_DIR 未提供时跳过安装（假设调用方已装，如复用既有 profile）
-  [ -n "${E2E_PLUGIN_DIR:-}" ] && exit 1
-}
+# 4. 安装被测插件并启动（对齐 static-smoke 的启动方式；失败时输出日志，不吞错误）
+if ! (cd "$H" && DSH_HOME="$H" "$DSH_BIN" plugin --profile web add "$E2E_PLUGIN_DIR" >"$H/install.log" 2>&1); then
+  if [ -n "${E2E_PLUGIN_DIR:-}" ]; then
+    echo "plugin add 失败；日志尾部:" >&2
+    tail -10 "$H/install.log" >&2 || true
+    exit 1
+  fi
+fi
 if command -v setsid >/dev/null 2>&1; then
   setsid sh -c "cd '$WS_ABS' && DSH_HOME='$H' E2E_UNUSED_API_KEY='e2e-dummy-key' '$DSH_BIN' --profile web --port '$PORT' >'$H/e2e-boot.log' 2>&1" &
 else

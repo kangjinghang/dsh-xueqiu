@@ -61,7 +61,12 @@ function fetchList(pid) {
 // ---- 1. 读契约：组合列表 + 自选列表 ----
 console.log('== C1 读契约 ==')
 const pid = (() => {
-  const d = JSON.parse(curl('/v5/stock/portfolio/list.json?system=true', 'GET'))
+  const raw = curl('/v5/stock/portfolio/list.json?system=true', 'GET')
+  const d = JSON.parse(raw)
+  if (String(d.error_code) === '400016') {
+    console.log('❌ 登录 Cookie 已过期（400016）——不是接口变更。请重新登录雪球并更新 XQ_COOKIE secret / ~/.xueqiu-login.json')
+    process.exit(1)
+  }
   ok(d.error_code === 0 || d.error_code === undefined, 'portfolio/list.json 无错误码')
   const p = pickPid((d.data) || d)
   ok(!!p, '取到默认自选分类 pid (' + p + ')')

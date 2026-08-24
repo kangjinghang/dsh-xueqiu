@@ -63,6 +63,10 @@ R=$(ev '(function(){var g=document.querySelector(".xq-badge-grip");if(!g)return 
 
 # ---- 2. 拖拽（真实鼠标）----
 echo "-- 徽章拖拽"
+# 确定性起点：徽章遗留位置可能在视口边缘，让真实鼠标的拖拽/点击目标不可靠。
+# 先 rpc 固定到中部安全区再刷新页面，后续每步的目标坐标就不再依赖上一轮遗留状态。
+rpc '{"action":"ui.set","args":{"badgePos":{"x":420,"y":160},"badgeW":null}}' >/dev/null
+agent-browser open "$BASE_URL/" >/dev/null 2>&1; sleep 8
 C=$(ev '(function(){var b=document.querySelector(".xq-badge").getBoundingClientRect();return Math.round(b.left+b.width/2)+","+Math.round(b.top+b.height/2)})()' | tr -d '"')
 X=${C%,*}; Y=${C#*,}
 agent-browser mouse move "$X" "$Y" >/dev/null && agent-browser mouse down >/dev/null \
@@ -87,8 +91,10 @@ W=$(ev 'Math.round(document.querySelector(".xq-badge").getBoundingClientRect().w
 BW=$(rpc '{"action":"ui.get","args":{}}' | grep -o '"badgeW":[0-9]*' | grep -o '[0-9]*$' || true)
 [ -n "$BW" ] && [ "$W" -gt $((BASE_W+40)) ] 2>/dev/null && [ "$BW" -gt $((BASE_W+20)) ] 2>/dev/null \
   && pass "拖 ⤡ 变宽并持久化 (${BASE_W}→${W}, badgeW=${BW})" || fail "调宽异常 (基准 ${BASE_W} / 渲染 $W / 持久 $BW)"
-agent-browser dblclick ".xq-badge-grip" >/dev/null 2>&1
-sleep 2
+# 双击复位：agent-browser dblclick 的两次点击间隔超出系统双击判定阈值，产生不了
+# 真 dblclick DOM 事件（实测页面监听计数为 0）——改为直接派发 dblclick（React 合成监听同一路径）。
+ev 'document.querySelector(".xq-badge-grip").dispatchEvent(new MouseEvent("dblclick",{bubbles:true}))' >/dev/null
+sleep 2   # saveUi 是 800ms debounce，等落盘后再读
 BW=$(rpc '{"action":"ui.get","args":{}}' | grep -o '"badgeW":[0-9]*' | grep -o '[0-9]*$' || true)
 [ -z "${BW}" ] && pass "双击复位 → badgeW=null（回归：曾落盘为下限120）" || fail "复位后 badgeW=${BW}（null 复位仍被钳制！）"
 

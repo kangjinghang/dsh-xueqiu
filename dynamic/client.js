@@ -1417,8 +1417,21 @@ return {
         }
         clamp()
         window.addEventListener('resize', clamp)
-        return function () { try { window.removeEventListener('resize', clamp) } catch (e) { /* ignore */ } }
-      }, [])
+        // 徽章内容（行情/热榜/快讯）异步加载后会"长高/长宽"——挂载瞬间的 offsetHeight 偏小，
+        // 一次性钳制会让后来长高的徽章下缘出屏。ResizeObserver 监听徽章自身尺寸变化再钳。
+        let ro = null
+        try {
+          ro = new ResizeObserver(function () { clamp() })
+          ro.observe(node)
+        } catch (e) { /* 无 ResizeObserver 时退化为 resize 事件 + 挂载时一次 */ }
+        return function () {
+          try { window.removeEventListener('resize', clamp) } catch (e) { /* ignore */ }
+          try { if (ro) ro.disconnect() } catch (e) { /* ignore */ }
+        }
+        // deps 含 badgePos：hydrate 是异步的，首次挂载时 badgePos 尚为 null（clamp 空跑），
+        // DockGate 恢复/拖拽提交都会 set badgePos 触发重渲染——必须在此后用实测尺寸再钳一次。
+        // 固定 [] 会让本钳制成为死代码（v1.21.6 修复：估算宽度偏小时徽章右/下缘出屏无人兜底）。
+      }, [ui.badgePos && ui.badgePos.x, ui.badgePos && ui.badgePos.y])
 
       function onDown(e) {
         if (e.pointerType === 'mouse' && e.button !== 0) return

@@ -263,7 +263,7 @@ exports.default = {
       if (!ts) return ''
       const d = new Date(Number(ts))
       function p(n) { return n < 10 ? '0' + n : String(n) }
-      return p(d.getMonth() + 1) + '-' + p(d.getDate())
+      return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate())
     }
     function fmtFullDay(ts) {
       if (!ts) return ''
@@ -386,6 +386,8 @@ exports.default = {
             upBorderColor: pal.up, downBorderColor: pal.down, noChangeBorderColor: pal.text,
             upWickColor: pal.up, downWickColor: pal.down, noChangeWickColor: pal.text
           },
+          // OHLC 图例：十字光标悬停才显示（v10 默认 always 常驻左上角，压蜡烛且与坐标轴数值重复）
+          tooltip: { showRule: 'follow_cross' },
           priceMark: {
             // 关闭最高/最低点重复标注（窄图时易与坐标轴重叠成杂乱数字），保留最新价标
             high: { show: false }, low: { show: false },
@@ -507,7 +509,13 @@ exports.default = {
         chart.createIndicator({ name: 'MA', paneId: 'candle_pane' })
         chart.createIndicator('VOL')
         chart.setOffsetRightDistance(16)
-        return h.dispose
+        // 双击回最新（标签文案承诺过；kline v10 自带 dblclick 仅做空十字，需手动 scrollToRealTime）
+        const onDbl = function () { try { chart.scrollToRealTime() } catch (e) { /* 忽略 */ } }
+        boxRef.current.addEventListener('dblclick', onDbl)
+        return function () {
+          boxRef.current.removeEventListener('dblclick', onDbl)
+          h.dispose()
+        }
       }, [])
 
       if (noLib) return klcNoLib()
@@ -1053,8 +1061,14 @@ exports.default = {
           ])
         })
         // 行情主标题：现价 + 涨跌额 + 涨跌幅（参考雪球 ¥18.23 +0.14 +0.77% 层级）
+        // 精度取现价自身小数位（港交所 1 位等），涨跌额同精度
+        const qDigits = (function () {
+          const m = String(q.current == null ? '' : q.current).split('.')
+          const d = m[1] ? m[1].length : 0
+          return Math.max(2, Math.min(4, d))
+        })()
         const chgRaw = (q.current != null && q.last_close != null) ? (Number(q.current) - Number(q.last_close)) : null
-        const chgStr = (chgRaw != null && isFinite(chgRaw)) ? (chgRaw > 0 ? '+' + fmt(chgRaw) : (chgRaw < 0 ? '-' + fmt(Math.abs(chgRaw)) : '0.00')) : ''
+        const chgStr = (chgRaw != null && isFinite(chgRaw)) ? (chgRaw > 0 ? '+' + fmt(chgRaw, qDigits) : (chgRaw < 0 ? '-' + fmt(Math.abs(chgRaw), qDigits) : fmt(0, qDigits))) : ''
         const priceCls = colorOf(q.percent)
         return el('div', null, [
           el('div', { key: 'h', className: 'xq-detail-head' }, [
@@ -1063,7 +1077,7 @@ exports.default = {
             el('span', { key: 'c', className: 'xq-detail-code' }, view),
             el('span', { key: 'sp', className: 'xq-spacer' }),
             el('div', { key: 'px', className: 'xq-detail-price' }, [
-              el('span', { key: 'cur', className: 'xq-detail-cur ' + priceCls }, fmt(q.current)),
+              el('span', { key: 'cur', className: 'xq-detail-cur ' + priceCls }, fmt(q.current, qDigits)),
               el('span', { key: 'dl', className: 'xq-detail-delta' }, [
                 chgStr ? el('span', { key: 'chg', className: 'xq-detail-chg ' + priceCls }, chgStr) : null,
                 el('span', { key: 'pct', className: 'xq-detail-pct ' + priceCls }, fmtPct(q.percent))

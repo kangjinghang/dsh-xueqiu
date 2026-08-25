@@ -126,7 +126,8 @@ fi
 
 # ---- 6. RPC 真实数据 ----
 say "-- 6/7 /xq-rpc 行情"
-QUOTE=$(curl -s -m 30 -X POST "http://127.0.0.1:$PORT/xq-rpc" -H 'Content-Type: application/json' -d '{"action":"quote","args":{"symbols":"SH600519"}}')
+# v1.22.8 起 Origin 必须存在且同源（浏览器对同源 POST 必带 Origin）——模拟真实浏览器调用
+QUOTE=$(curl -s -m 30 -X POST "http://127.0.0.1:$PORT/xq-rpc" -H 'Content-Type: application/json' -H "Origin: http://127.0.0.1:$PORT" -d '{"action":"quote","args":{"symbols":"SH600519"}}')
 if [[ "$QUOTE" == *'"ok":true'* ]]; then
   pass "RPC 返回真实行情"
 elif [ -n "${SMOKE_CI:-}" ] && [[ "$QUOTE" == *'cookie'* || "$QUOTE" == *'network'* || "$QUOTE" == *'风控'* ]]; then
@@ -142,6 +143,11 @@ if [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:$PORT/x
   pass "恶意 Origin 被 403"
 else
   fail "栅栏未拦截跨源请求"
+fi
+if [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:$PORT/xq-rpc" -H 'Content-Type: application/json' -d '{}')" = "403" ]; then
+  pass "无 Origin 直调被 403（v1.22.8 起要求 Origin 必须存在）"
+else
+  fail "无 Origin 直调未被拦截"
 fi
 
 # ---- 可选浏览器层 ----

@@ -438,6 +438,8 @@ exports.default = {
     function klcSetup(K, boxRef, kind) {
       const chart = K.init(boxRef.current, { styles: klcStyles(kind, klcPalette()) })
       if (!chart) return null
+      // 卸载清理时 boxRef.current 已被 React 置 null，dispose 须用闭包捕获的节点
+      const box = boxRef.current
       let ro = null
       try {
         ro = new ResizeObserver(function () { chart.resize() })
@@ -453,7 +455,8 @@ exports.default = {
         dispose: function () {
           if (ro) ro.disconnect()
           if (mo) mo.disconnect()
-          try { K.dispose(boxRef.current) } catch (e) { /* 忽略 */ }
+          // 卸载清理时 boxRef.current 已被 React 置 null（与 dblclick 监听同类坑），须闭包捕获节点
+          try { K.dispose(box) } catch (e) { /* 忽略 */ }
         }
       }
     }
@@ -558,10 +561,15 @@ exports.default = {
       const [hi, setHi] = React.useState(null)
       const baseRef = React.useRef({ lastClose: lastClose })
       baseRef.current = { lastClose: lastClose }
+      // 分时数据是详情页渐进渲染晚到的一块（quote+kline 先上屏、minute 随后 merge）：
+      // effect 依赖 [] 曾导致空 items 挂载后数据到达永不刷新（空白图）。改为「空数据不挂图表，
+      // 数据到达（hasData 变 true）时重建」，彻底消除竞态窗口。
+      const hasData = items.length > 0
 
       React.useEffect(function () {
         const K = klcLib()
         if (!K || !boxRef.current) { setNoLib(true); return undefined }
+        if (!hasData) return undefined   // 数据未到：不建图表（等 hasData 变 true 重建）
         // 自定义指标：昨收虚线 + 均价线（series normal → 单独附图，避免干扰价格轴刻度）
         // 注意：registerIndicator 全局只注册一次，calc 闭包捕获的是首次挂载实例的 baseRef——
         // 切换股票后旧 calc 仍读旧实例的昨收（宁德分时曾因此挂上茅台昨收 1304，y 轴被撑爆成直线）。
@@ -639,9 +647,10 @@ exports.default = {
           try { chart.unsubscribeAction('onCrosshairChange') } catch (e) { /* 忽略 */ }
           h.dispose()
         }
-      }, [])
+      }, [hasData, props.symbol])
 
       if (noLib) return klcNoLib()
+      if (!hasData) return el('div', { className: 'xq-chart-wrap', style: { display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--dsw-alias-label-secondary)', fontSize: 12 } }, '分时数据加载中…')
       // 十字光标 tooltip（沿用 .xq-tip 卡片）
       let tip = null
       if (hi && hi.r) {
@@ -680,6 +689,12 @@ exports.default = {
       const [indices, setIndices] = React.useState([])
       const [hot, setHot] = React.useState([])
       const [hotMarket, setHotMarket] = React.useState('cn')
+      // 竞态防护：热榜/搜索的响应序号（旧响应到达时序号已过期则丢弃，防慢请求覆盖新结果）
+      const hotSeq = React.useRef(0)
+      const searchSeq = React.useRef(0)
+      // 轮询闭包读当前市场（interval 闭包不随状态更新，直接捕获 state 会拿到 stale 值）
+      const hotMarketRef = React.useRef(hotMarket)
+      hotMarketRef.current = hotMarket
       const [news, setNews] = React.useState([])
       const [newsMore, setNewsMore] = React.useState(false)   // 翻页加载中
       const [newsNoMore, setNewsNoMore] = React.useState(false) // 已到最旧
@@ -735,10 +750,13 @@ exports.default = {
       }
 
       function refreshContent() {
+        const my = ++hotSeq.current
+        const market = hotMarketRef.current   // 读当前市场（轮询闭包防 stale）
         Promise.all([
-          call('hot', { market: hotMarket, size: 10 }),
+          call('hot', { market: market, size: 10 }),
           call('news', { count: 20 })
         ]).then(function (res) {
+          if (hotSeq.current !== my) return   // 期间用户切了市场/触发过手动刷新：丢弃旧响应
           setHot((res[0] && res[0].list) || [])
           setNews((res[1] && res[1].items) || [])
           setNewsMore(false)
@@ -875,15 +893,18 @@ exports.default = {
         const q = searchQ.trim()
         if (!q) return
         setSearching(true)
+        const my = ++searchSeq.current
         const p = searchMode === 'stock'
           ? call('search', { q: q, count: 8 })
           : call('searchPosts', { q: q, count: 10 })
         p.then(function (data) {
+          if (searchSeq.current !== my) return   // 快速连搜：只认最后一次
           setSearchRes((data && data.list) || [])
         }).catch(function (e) {
+          if (searchSeq.current !== my) return
           setErr(String((e && e.message) || e))
           setSearchRes([])
-        }).then(function () { setSearching(false) })
+        }).then(function () { if (searchSeq.current === my) setSearching(false) })
       }
 
       function addManual() {
@@ -1166,9 +1187,14 @@ exports.default = {
               key: m[0], className: hotMarket === m[0] ? 'xq-seg-on' : '',
               onClick: function () {
                 setHotMarket(m[0])
+                const my = ++hotSeq.current
                 call('hot', { market: m[0], size: 10 }).then(function (data) {
+                  if (hotSeq.current !== my) return   // 快速连点：只认最后一次
                   setHot((data && data.list) || [])
-                }).catch(function (e) { setErr(String((e && e.message) || e)) })
+                }).catch(function (e) {
+                  if (hotSeq.current !== my) return
+                  setErr(String((e && e.message) || e))
+                })
               }
             }, m[1])
           })),
@@ -1237,6 +1263,13 @@ exports.default = {
         news.forEach(function (it) {
           const d = new Date(it.created_at)
           const now = new Date()
+          if (isNaN(d.getTime())) {   // 脏/缺失时间：跳过分组头（否则渲染 "NaN月NaN日"）
+            kids.push(el('div', { key: String(it.id), className: 'xq-news-item' + (it.mark === 1 ? ' xq-important' : '') }, [
+              el('div', { key: 't' }, it.text),
+              el('div', { key: 'm', className: 'xq-news-time' }, fmtTime(it.created_at) + (it.mark === 1 ? ' · 重要' : ''))
+            ]))
+            return
+          }
           const sameDay = function (a, b) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate() }
           const yest = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
           let label = null
@@ -1590,7 +1623,7 @@ exports.default = {
           onDoubleClick: onGripDblClick
         }, '⤡')
       ])
-      return el('div', { style: { contents: 'display' } }, [badgeEl])
+      return el('div', { style: { display: 'contents' } }, [badgeEl])
     }
 
     // ---------- 底部指数条（会话页，输入框下方氛围行） ----------

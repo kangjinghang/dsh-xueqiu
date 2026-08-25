@@ -185,8 +185,8 @@ return {
       const spec = shell.resolve({ command: cmd, timeoutMs: 15000, stdoutMaxBytes: 4194304 })
       const result = await shell.run(spec)
       if (result.exitCode !== 0) {
-        const err = ((result.stderr && result.stderr.text) || '').slice(0, 200)
-        throw new Error('curl 失败 (' + result.exitCode + '): ' + err)
+        // 不回显 stderr：bash 语法错误会把完整命令行（含内部拼接细节）透给调用方
+        throw new Error('curl 失败 (' + result.exitCode + ')')
       }
       return String(result.stdout.text || '')
     }
@@ -529,7 +529,14 @@ return {
       syncInflight = true
       try {
         const cloud = await fetchCloudWatchlist()
-        if (!cloud.symbols.length) return false   // 空结果不镜像（接口异常/账号无自选都不该清空本地）
+        if (!cloud.symbols.length) {
+          // 空结果不镜像（接口异常/账号无自选都不该清空本地），但必须推进 lastSyncAt——
+          // 否则 cookie 半失效时节流永不生效，每次 watchlist.get 都重复打上游 2 个请求
+          wl.lastSyncAt = Date.now()
+          watchlist = wl
+          await saveWatchlist()
+          return false
+        }
         const cur = wl.symbols
         const changed = cur.length !== cloud.symbols.length || cloud.symbols.some(function (s, i) { return cur[i] !== s })
         if (changed) {
@@ -554,7 +561,7 @@ return {
       if (wl.symbols.indexOf(symbol) === -1) {
         wl.symbols.push(symbol)
         await saveWatchlist()
-        cloudWatchAdd(symbol)   // 尽力而为：云端添加失败不影响本地
+        cloudWatchAdd(symbol).catch(function () { /* 尽力而为：失败由下次同步纠正 */ })   // 云端添加失败不影响本地
       }
       return { symbols: wl.symbols }
     }
@@ -566,7 +573,7 @@ return {
       if (i !== -1) {
         wl.symbols.splice(i, 1)
         await saveWatchlist()
-        cloudWatchDelete(symbol)   // 尽力而为：云端删除失败不影响本地
+        cloudWatchDelete(symbol).catch(function () { /* 尽力而为：失败由下次同步纠正 */ })   // 云端删除失败不影响本地
       }
       return { symbols: wl.symbols }
     }
@@ -808,8 +815,9 @@ return {
     async function actUiGet() {
       const s = await loadUiState()
       const hNum = Number(s.dockH)
+      const validTabs = ['market', 'hot', 'search', 'news']
       return {
-        tab: s.tab || 'market', open: s.open !== false,
+        tab: (typeof s.tab === 'string' && validTabs.indexOf(s.tab) >= 0) ? s.tab : 'market',   // 损坏状态文件的非法 tab 一律回退（防类型穿透） open: s.open !== false,
         dockH: (s.dockH !== undefined && isFinite(hNum) && hNum >= 160 && hNum <= 1200) ? hNum : null,
         badgeW: (s.badgeW !== undefined && isFinite(Number(s.badgeW)) && Number(s.badgeW) >= 120 && Number(s.badgeW) <= 480) ? Number(s.badgeW) : null,
         badgePos: (s.badgePos && isFinite(Number(s.badgePos.x)) && isFinite(Number(s.badgePos.y)))
@@ -884,13 +892,14 @@ return {
           kind: 'prefix',
           path: '/xq-rpc',
           handler: async function (req, res) {
-            // 同源栅栏：Host 头必须是回环，带 Origin 时必须同源（防 DNS rebinding/CSRF）
+            // 同源栅栏：Host 头必须是回环，Origin 必须存在且同源（防 DNS rebinding/CSRF/无 Origin 的跨进程直调）
             const hostHeader = String(req.headers.host || '')
             const origin = req.headers.origin ? String(req.headers.origin) : ''
             const hostAuth = hostHeader.replace(/:\d+$/, '')
             const loopback = hostAuth === '127.0.0.1' || hostAuth === 'localhost' || hostAuth === '[::1]' || hostAuth === '::1'
             if (!loopback) { res.writeHead(403); res.end('forbidden'); return }
-            if (origin && origin !== 'http://' + hostHeader && origin !== 'https://' + hostHeader) {
+            // 浏览器对（哪怕同源的）POST fetch 必带 Origin；无 Origin 一律拒绝（curl/本机进程裸调）
+            if (!origin || (origin !== 'http://' + hostHeader && origin !== 'https://' + hostHeader)) {
               res.writeHead(403); res.end('forbidden'); return
             }
             const chunks = []
@@ -1089,11 +1098,17 @@ return {
     // 注册：动态环境走 harness 门面（defineTool 会做标记+校验）；
     // 静态 bundle 层没有 harness，参数已是 JSON Schema 根，直接注册 plain 对象
     // （tools 服务在静态路径无 defineTool 守卫），用 inject 等服务就绪。
+    // 统一包装 execute：args 为 null/undefined 时兜底 {}（工具层直解引用会抛 TypeError）
+    function wrapToolSpec(spec) {
+      const raw = spec.execute
+      if (!raw) return spec
+      return Object.assign({}, spec, { execute: function (args) { return raw.call(this, args || {}) } })
+    }
     if (typeof harness !== 'undefined') {
       for (let i = 0; i < XQ_AGENT_TOOLS.length; i++) {
         const spec = XQ_AGENT_TOOLS[i]
         ctx.effect(function () {
-          return harness.registerTool(ctx, harness.defineTool(spec))
+          return harness.registerTool(ctx, harness.defineTool(wrapToolSpec(spec)))
         })
       }
     } else {
@@ -1101,7 +1116,7 @@ return {
         for (let i = 0; i < XQ_AGENT_TOOLS.length; i++) {
           const spec = XQ_AGENT_TOOLS[i]
           toolsCtx.effect(function () {
-            return toolsCtx.tools.register(spec)
+            return toolsCtx.tools.register(wrapToolSpec(spec))
           })
         }
       })

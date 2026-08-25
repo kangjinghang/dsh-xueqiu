@@ -532,6 +532,9 @@ return {
         const K = klcLib()
         if (!K || !boxRef.current) { setNoLib(true); return undefined }
         // 自定义指标：昨收虚线 + 均价线（series normal → 单独附图，避免干扰价格轴刻度）
+        // 注意：registerIndicator 全局只注册一次，calc 闭包捕获的是首次挂载实例的 baseRef——
+        // 切换股票后旧 calc 仍读旧实例的昨收（宁德分时曾因此挂上茅台昨收 1304，y 轴被撑爆成直线）。
+        // 因此每次挂载都 overrideIndicator 换成绑定当前 baseRef 的新 calc。
         if (K.getSupportedIndicators().indexOf('xq-minute') < 0) {
           K.registerIndicator({
             name: 'xq-minute', shortName: '分时', series: 'normal',
@@ -577,6 +580,13 @@ return {
         // 涨跌色改面积线色（palette up 色对A股即"涨"）
         chart.setStyles({ candle: { type: 'area', area: { lineColor: up ? klcPalette().up : klcPalette().down, backgroundColor: up ? 'rgba(239,68,68,0.10)' : 'rgba(34,197,94,0.10)' } } })
         chart.createIndicator({ name: 'xq-minute', paneId: 'candle_pane' })   // 均价/昨收叠加到主图分时曲线（与雪球一致）
+        // 绑定当前实例 baseRef 的 calc（防跨股票串昨收，见上方注释）
+        chart.overrideIndicator({ name: 'xq-minute', calc: function (dataList) {
+          const base = baseRef.current.lastClose
+          return dataList.map(function (d) {
+            return { avg: Number(d.avg_price != null ? d.avg_price : d.close), base: base }
+          })
+        } })
         // 分时固定视角：禁缩放拖拽，全部笔数铺满宽度
         chart.setZoomEnabled(false)
         chart.setScrollEnabled(false)

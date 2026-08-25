@@ -386,10 +386,11 @@ exports.default = {
             upBorderColor: pal.up, downBorderColor: pal.down, noChangeBorderColor: pal.text,
             upWickColor: pal.up, downWickColor: pal.down, noChangeWickColor: pal.text
           },
-          // OHLC 图例：十字光标悬停才显示（v10 默认 always 常驻左上角，压蜡烛且与坐标轴数值重复）。
-          // 默认英文 time/open/... 标题太长会折成两行压图——换紧凑中文单行（开 高 低 收 量）+ 隐藏标题
+          // OHLC 图例：K线常显最新一根（v1.22.5 起紧凑中文单行、字号 10，不再压蜡烛）；
+          // 悬停十字光标时跟随显示对应根；分时在下方 minute 分支整体关闭。
+          // 默认英文 time/open/... 标题太长会折成两行——已换中文单行
           tooltip: {
-            showRule: 'follow_cross',
+            showRule: 'always',
             title: { show: false },
             legend: {
               size: 10, color: pal.text,

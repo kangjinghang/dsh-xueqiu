@@ -305,6 +305,9 @@ return {
         let ch = false
         for (const k in patch) {
           if (this[k] !== patch[k]) { this[k] = patch[k]; ch = true }
+          // 水合前用户已交互过的字段不做回滚（页面刚加载就点开面板/切标签，不被迟到的旧持久化打回）
+          if (k === 'open') this.openTouched = true
+          if (k === 'tab') this.tabTouched = true
         }
         if (ch) this.notify()
       }
@@ -330,7 +333,10 @@ return {
 
     function cssVarColor(name, fallback) {
       try {
-        const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+        // 主题令牌定义在 <body>（GUI 主题层），<html> 上读不到——曾因此永远拿不到令牌、
+        // 双主题都渲染硬编码回退色（浅色下图例 #8a8f98 对白底对比度仅 ~1.8:1）
+        let v = getComputedStyle(document.body).getPropertyValue(name).trim()
+        if (!v) v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
         return v || fallback
       } catch (e) { return fallback }
     }
@@ -420,11 +426,21 @@ return {
         mo = new MutationObserver(function () { chart.setStyles(klcStyles(kind, klcPalette())) })
         mo.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme'] })
       } catch (e) { /* 忽略 */ }
+      // GUI 跟随系统配色时 DOM 属性不变（上面的 MutationObserver 永不触发），
+      // 主题翻转唯一可靠信号是 matchMedia change
+      let mqOff = null
+      try {
+        const mq = window.matchMedia('(prefers-color-scheme: dark)')
+        const onScheme = function () { try { chart.setStyles(klcStyles(kind, klcPalette())) } catch (e) { /* ignore */ } }
+        if (mq.addEventListener) { mq.addEventListener('change', onScheme); mqOff = function () { mq.removeEventListener('change', onScheme) } }
+        else if (mq.addListener) { mq.addListener(onScheme); mqOff = function () { mq.removeListener(onScheme) } }
+      } catch (e) { /* ignore */ }
       return {
         chart: chart,
         dispose: function () {
           if (ro) ro.disconnect()
           if (mo) mo.disconnect()
+          if (mqOff) mqOff()
           // 卸载清理时 boxRef.current 已被 React 置 null（与 dblclick 监听同类坑），须闭包捕获节点
           try { K.dispose(box) } catch (e) { /* 忽略 */ }
         }
@@ -463,9 +479,13 @@ return {
       const propsRef = React.useRef(null)
       propsRef.current = { rows: rows, onNeedEarlier: onNeedEarlier }
 
+      // v1.22.10 起周期切换只清 kline 数据不重建详情骨架，图表可能先以空 rows 挂载、
+      // 数据后到——与 MinuteChart 的 hasData 同款门控：空数据不建图，rows 到达时重建
+      const hasRows = rows.length > 0
       React.useEffect(function () {
         const K = klcLib()
         if (!K || !boxRef.current) { setNoLib(true); return undefined }
+        if (!hasRows) return undefined
         const h = klcSetup(K, boxRef, 'kline')
         if (!h) { setNoLib(true); return undefined }
         const chart = h.chart
@@ -508,7 +528,7 @@ return {
           try { box.removeEventListener('dblclick', onDbl) } catch (e) { /* 忽略 */ }
           h.dispose()
         }
-      }, [])
+      }, [hasRows])
 
       if (noLib) return klcNoLib()
       const norm = rows.length && !rows[0].timestamp ? klcNormRows(rows) : rows
@@ -675,6 +695,8 @@ return {
       const [manualCode, setManualCode] = React.useState('')
       const [view, setView] = React.useState(null)
       const [detail, setDetail] = React.useState(null)
+      // K线到达早于详情骨架时的暂存（view 与 period 两个 effect 并行取数，避免丢数据）
+      const klineStash = React.useRef(null)
       const [klinePeriod, setKlinePeriod] = React.useState('day')
       const [chartMode, setChartMode] = React.useState('kline')
       const [marketOpen, setMarketOpen] = React.useState(true)
@@ -793,27 +815,30 @@ return {
         }).catch(function () { return [] /* 追加失败静默：图表仍可看已有缓冲 */ })
       }
 
+      // 详情骨架（报价/分时/财务/KOL）：只在换标的时整体重建；
+      // v1.22.10 前 klinePeriod 也在依赖里，切周期会把整个详情清空重拉 5 个接口——
+      // 表现为切周期时报价/图例/周期丸闪灭 100-300ms，快速连点会丢按钮
       React.useEffect(function () {
         if (!view) { setDetail(null); return }
         let alive = true
+        klineStash.current = null
         setDetail(null)
         function fb(p) { return p.catch(function () { return null }) }
-        // 渐进渲染：报价+K线先上屏，分时/财务/KOL 到达后补充，避免等齐才显示
+        // 渐进渲染：报价先上屏（K线由下方周期 effect 并行供给，到达早于骨架时走 stash），分时/财务/KOL 到达后补充
         const pQuote = fb(call('quoteDetail', { symbol: view }))
-        const pKline = fb(call('kline', { symbol: view, period: klinePeriod, count: 500 }))
         const pMinute = fb(call('minute', { symbol: view }))
         const pFinance = fb(call('finance', { symbol: view }))
         const pKol = fb(call('kol', { symbol: view, count: 6 }))
-        Promise.all([pQuote, pKline]).then(function (res) {
+        pQuote.then(function (res) {
           if (!alive) return
           setDetail({
-            quote: (res[0] && res[0].quote) || {},
-            kline: res[1] || { rows: [] },
+            quote: (res && res.quote) || {},
+            kline: klineStash.current || { rows: [] },
             minute: { items: [], last_close: null },
             finance: { list: [] },
             kol: []
           })
-          if (!res[0]) setErr('详情加载失败，数据可能不完整')
+          if (!res) setErr('详情加载失败，数据可能不完整')
           // 其余部分到达后增量合并
           pMinute.then(function (m) { if (alive && m) setDetail(function (d) { return d ? Object.assign({}, d, { minute: m }) : d }) })
           pFinance.then(function (f) { if (alive && f) setDetail(function (d) { return d ? Object.assign({}, d, { finance: f }) : d }) })
@@ -821,6 +846,19 @@ return {
         }).catch(function (e) {
           if (alive) setErr(String((e && e.message) || e))
         })
+        return function () { alive = false }
+      }, [view])
+
+      // K线按周期独立拉取：切周期只清图表数据、只发 1 个请求，报价与周期丸全程保持可点
+      React.useEffect(function () {
+        if (!view) return
+        let alive = true
+        setDetail(function (d) { return d ? Object.assign({}, d, { kline: { rows: [] } }) : d })
+        call('kline', { symbol: view, period: klinePeriod, count: 500 }).then(function (res) {
+          if (!alive || !res) return
+          klineStash.current = res
+          setDetail(function (d) { return d ? Object.assign({}, d, { kline: res }) : d })
+        }).catch(function () { /* 周期拉取失败：保持空图，不推翻已有详情 */ })
         return function () { alive = false }
       }, [view, klinePeriod])
 
@@ -1299,8 +1337,8 @@ return {
         let alive = true
         call('ui.get', {}).then(function (d) {
           if (!alive) return
-          if (d && d.tab) ui.set({ tab: d.tab })
-          if (d && typeof d.open === 'boolean') ui.set({ open: d.open })
+          if (d && d.tab && !ui.tabTouched) ui.set({ tab: d.tab })
+          if (d && typeof d.open === 'boolean' && !ui.openTouched) ui.set({ open: d.open })
           if (d && d.badgePos && isFinite(Number(d.badgePos.x)) && isFinite(Number(d.badgePos.y))) {
             // 恢复位置时钳制到当前视口内（视口缩小/分辨率变化后防止徽章落到屏幕外）
             // maxX 必须按徽章实际宽度算：区域模式宽达 480px，固定 -140 会让宽徽章右缘出屏

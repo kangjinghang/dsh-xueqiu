@@ -817,7 +817,10 @@ export default {
       const hNum = Number(s.dockH)
       const validTabs = ['market', 'hot', 'search', 'news']
       return {
-        tab: (typeof s.tab === 'string' && validTabs.indexOf(s.tab) >= 0) ? s.tab : 'market',   // 损坏状态文件的非法 tab 一律回退（防类型穿透） open: s.open !== false,
+        // 损坏状态文件的非法 tab 一律回退（防类型穿透）
+        tab: (typeof s.tab === 'string' && validTabs.indexOf(s.tab) >= 0) ? s.tab : 'market',
+        // v1.22.8 引入回归：open 字段曾被上一行的行尾注释吞掉，导致客户端刷新后不恢复面板开合状态
+        open: s.open !== false,
         dockH: (s.dockH !== undefined && isFinite(hNum) && hNum >= 160 && hNum <= 1200) ? hNum : null,
         badgeW: (s.badgeW !== undefined && isFinite(Number(s.badgeW)) && Number(s.badgeW) >= 120 && Number(s.badgeW) <= 480) ? Number(s.badgeW) : null,
         badgePos: (s.badgePos && isFinite(Number(s.badgePos.x)) && isFinite(Number(s.badgePos.y)))

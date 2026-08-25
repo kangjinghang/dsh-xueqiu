@@ -28,14 +28,16 @@
    SMOKE_BROWSER=1 bash scripts/static-smoke.sh   # 本机可追加浏览器徽章检查
    ```
 
-3. **发布钩子 + CI** — `npm publish` 前自动跑 `npm run check`（drift + 语法 + 冒烟）；
-   `.github/workflows/check.yml` 在 push/PR 时跑同样关卡。
+3. **发布钩子 + CI** — `npm publish` 前自动跑 `npm run check`（drift + 语法 + 冒烟，全量）；
+   `.github/workflows/check.yml` 在 push/PR/**发版 tag** 时跑同样关卡。
+   平时开发用 `npm run check:fast`（drift + 语法，秒级、不起服务）；
+   重冒烟只跑 `npm run smoke` 或留给 CI——本地不想起服务就不用起。
 
 ## 发布 checklist
 
 1. 改代码：只改 `dynamic/`，然后 `npm run generate`
 2. 动态模式自测（cordis define/run + 浏览器）
-3. `npm run check`（静态关卡）
+3. `npm run check`（静态关卡；赶时间可先 `check:fast`，冒烟留给 CI 的 tag 触发）
 4. 版本号 + 双语 changelog → commit → push
 5. `npm publish --registry https://registry.npmjs.org`（prepublishOnly 会再跑一遍关卡；
    本机默认 registry 是 npmmirror 镜像，**必须显式指定官方 registry**）

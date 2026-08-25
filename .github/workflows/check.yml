@@ -3,6 +3,7 @@ name: check
 on:
   push:
     branches: [main]
+    tags: ['v*'] # 发版 tag 也触发：重冒烟已从本地 check 挪到 CI（2026-08-26）
   pull_request:
   workflow_dispatch:
   schedule:

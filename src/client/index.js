@@ -410,7 +410,8 @@ exports.default = {
           bars: [{ upColor: pal.up, downColor: pal.down, noChangeColor: pal.text }],
           // 和谐 MA 配色：蓝/橙/紫/青，多均线更易区分（对齐雪球观感）
           lines: [{ color: '#3b82f6' }, { color: '#f59e0b' }, { color: '#8b5cf6' }, { color: '#06b6d4' }],
-          tooltip: { show: false }   // 指标数值走蜡烛 legend，避免双份
+          // MA 数值悬停显示（蜡烛图例一行 + MA 图例一行，同雪球）；常驻关闭避免压图
+          tooltip: { showRule: 'follow_cross' }
         },
         xAxis: { axisLine: { color: pal.grid }, tickLine: { color: pal.grid }, tickText: { color: pal.text } },
         yAxis: { axisLine: { color: pal.grid }, tickLine: { color: pal.grid }, tickText: { color: pal.text } },
@@ -425,6 +426,10 @@ exports.default = {
         s.candle.type = 'area'
         s.candle.area = { lineSize: 1.4, lineColor: pal.up, backgroundColor: 'rgba(239,68,68,0.10)', value: 'close', smooth: false }
         s.candle.priceMark = { high: { color: pal.text }, low: { color: pal.text }, last: { upColor: pal.up, downColor: pal.down, noChangeColor: pal.text, text: { color: pal.text } } }
+        // 分时悬停信息已由自定义 .xq-tip（价/均价/涨跌）承担；面积图开=高=低=收同值，
+        // canvas OHLC 图例纯冗余且与 .xq-tip 双份叠加 → 蜡烛与指标图例整体关闭
+        s.candle.tooltip = { showRule: 'none' }
+        s.indicator = { tooltip: { showRule: 'none' } }
       }
       return s
     }

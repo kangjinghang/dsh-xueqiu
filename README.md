@@ -190,6 +190,8 @@ dsh-xueqiu/
 
 ## 📋 更新日志
 
+- **1.22.4**（2026-08-26）
+  - 修复：**切分时整个面板崩溃消失**（1.22.3 回归）。双击回最新的清理函数里用了 `boxRef.current.removeEventListener`，但 React 卸载组件时先清 ref 再跑 effect 清理，此时 `boxRef.current` 已是 null → 抛 TypeError → `conversation.input.dock` 槽位整体崩溃，只剩自选股小徽章且无法重开。改为 effect 内闭包捕获节点。回归：K线↔分时来回 4 轮 + 收起/徽章重开/再进详情，0 报错。
 - **1.22.3**（2026-08-26）
   - 修复：**K线 OHLC 图例常驻压蜡烛**。KLineChart v10 默认 `candle.tooltip.showRule: 'always'` 把 time/open/high/low/close/volume 永久画在蜡烛区左上角（像素级实测 1394 个文字像素自 y=23 起覆盖蜡烛）。改为 `follow_cross`（十字光标悬停才显示，与雪球一致），此前只关了指标 tooltip 漏了蜡烛自身的。
   - 修复：**"双击回最新"标签承诺无实现**。图表下方文案写了"双击回最新"但代码没有 dblclick 处理（实测左拖加载 999 根后双击无反应）。现监听容器 dblclick → `chart.scrollToRealTime()`（实测可视区 132→430-500 回到最新）。

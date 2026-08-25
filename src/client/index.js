@@ -510,10 +510,12 @@ exports.default = {
         chart.createIndicator('VOL')
         chart.setOffsetRightDistance(16)
         // 双击回最新（标签文案承诺过；kline v10 自带 dblclick 仅做空十字，需手动 scrollToRealTime）
+        const box = boxRef.current
         const onDbl = function () { try { chart.scrollToRealTime() } catch (e) { /* 忽略 */ } }
-        boxRef.current.addEventListener('dblclick', onDbl)
+        box.addEventListener('dblclick', onDbl)
         return function () {
-          boxRef.current.removeEventListener('dblclick', onDbl)
+          // 卸载清理时 boxRef.current 已被 React 置 null（切 tab 触发，曾致槽位整体崩溃），须闭包捕获节点
+          try { box.removeEventListener('dblclick', onDbl) } catch (e) { /* 忽略 */ }
           h.dispose()
         }
       }, [])

@@ -190,6 +190,8 @@ dsh-xueqiu/
 
 ## 📋 更新日志
 
+- **1.22.5**（2026-08-26）
+  - 修复：**悬停 OHLC 图例折成两行压图**（1.22.3 遗留）。`follow_cross` 后默认英文 time/open/high/low/close/volume 标题过长，悬停时图例在窄面板折两行盖住蜡烛。改为紧凑中文单行（`开 高 低 收 量`，字号 10）+ 隐藏 ticker 标题——实测悬停图例单行 10px 高、占宽 45%，不再折行。
 - **1.22.4**（2026-08-26）
   - 修复：**切分时整个面板崩溃消失**（1.22.3 回归）。双击回最新的清理函数里用了 `boxRef.current.removeEventListener`，但 React 卸载组件时先清 ref 再跑 effect 清理，此时 `boxRef.current` 已是 null → 抛 TypeError → `conversation.input.dock` 槽位整体崩溃，只剩自选股小徽章且无法重开。改为 effect 内闭包捕获节点。回归：K线↔分时来回 4 轮 + 收起/徽章重开/再进详情，0 报错。
 - **1.22.3**（2026-08-26）

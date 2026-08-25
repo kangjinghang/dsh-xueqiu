@@ -386,8 +386,20 @@ exports.default = {
             upBorderColor: pal.up, downBorderColor: pal.down, noChangeBorderColor: pal.text,
             upWickColor: pal.up, downWickColor: pal.down, noChangeWickColor: pal.text
           },
-          // OHLC 图例：十字光标悬停才显示（v10 默认 always 常驻左上角，压蜡烛且与坐标轴数值重复）
-          tooltip: { showRule: 'follow_cross' },
+          // OHLC 图例：十字光标悬停才显示（v10 默认 always 常驻左上角，压蜡烛且与坐标轴数值重复）。
+          // 默认英文 time/open/... 标题太长会折成两行压图——换紧凑中文单行（开 高 低 收 量）+ 隐藏标题
+          tooltip: {
+            showRule: 'follow_cross',
+            title: { show: false },
+            legend: {
+              size: 10, color: pal.text,
+              template: [
+                { title: '开', value: '{open}' }, { title: '高', value: '{high}' },
+                { title: '低', value: '{low}' }, { title: '收', value: '{close}' },
+                { title: '量', value: '{volume}' }
+              ]
+            }
+          },
           priceMark: {
             // 关闭最高/最低点重复标注（窄图时易与坐标轴重叠成杂乱数字），保留最新价标
             high: { show: false }, low: { show: false },

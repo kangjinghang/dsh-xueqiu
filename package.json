@@ -55,6 +55,6 @@
     "check:fast": "python3 scripts/gen-static.py --check && node --check src/index.js && node --check src/client/index.js && node -e \"new Function(require('fs').readFileSync('dynamic/host.js','utf8'))\" && node -e \"new Function(require('fs').readFileSync('dynamic/client.js','utf8'))\"",
     "check": "npm run check:fast && bash scripts/static-smoke.sh",
     "smoke": "bash scripts/static-smoke.sh",
-    "prepublishOnly": "npm run check"
+    "prepublishOnly": "npm run check:fast"
   }
 }

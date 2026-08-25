@@ -152,20 +152,25 @@ exports.default = {
       '.xq-news-time{font-size:10.5px;color:var(--dsw-alias-label-secondary);margin-top:3px;}\n' +
       '.xq-news-more{font-size:11.5px;color:var(--dsw-alias-label-secondary);text-align:center;padding:6px 0 2px;cursor:pointer;user-select:none;}\n' +
       '.xq-news-more:hover{color:var(--dsw-alias-label-primary);}\n' +
-      '.xq-detail-head{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;}\n' +
-      '.xq-detail-name{font-size:15px;font-weight:700;}\n' +
-      '.xq-detail-code{font-size:11px;color:var(--dsw-alias-label-secondary);}\n' +
-      '.xq-detail-cur{font-size:20px;font-weight:800;}\n' +
-      '.xq-detail-pct{font-size:13px;}\n' +
-      '.xq-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:8px;}\n' +
-      '.xq-stat{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);border-radius:6px;padding:4px 7px;}\n' +
-      '.xq-stat-k{font-size:10.5px;color:var(--dsw-alias-label-secondary);}\n' +
-      '.xq-stat-v{font-size:12.5px;font-weight:600;}\n' +
-      '.xq-card{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);border-radius:8px;padding:8px 10px;margin-bottom:8px;}\n' +
-      '.xq-card-t{font-size:12px;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}\n' +
-      '.xq-periods{display:inline-flex;flex-wrap:wrap;gap:2px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:1px;}\n' +
-      '.xq-periods button,.xq-modes button{font-size:11.5px;border:none;background:none;color:var(--dsw-alias-label-secondary);padding:2px 9px;border-radius:5px;cursor:pointer;}\n' +
-      '.xq-periods button.xq-on,.xq-modes button.xq-on{background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);font-weight:600;}\n' +
+      '.xq-detail-head{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;}\n' +
+      '.xq-detail-name{font-size:16px;font-weight:700;letter-spacing:.2px;}\n' +
+      '.xq-detail-code{font-size:11px;color:var(--dsw-alias-label-tertiary);letter-spacing:.3px;}\n' +
+      '.xq-detail-price{display:flex;align-items:baseline;gap:10px;}\n' +
+      '.xq-detail-delta{display:flex;align-items:baseline;gap:6px;}\n' +
+      '.xq-detail-cur{font-size:27px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;}\n' +
+      '.xq-detail-chg{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;}\n' +
+      '.xq-detail-pct{font-size:14px;font-weight:700;font-variant-numeric:tabular-nums;}\n' +
+      '.xq-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px;}\n' +
+      '.xq-stat{background:color-mix(in srgb, var(--dsw-alias-bg-layer-2) 55%, transparent);border:1px solid var(--dsw-alias-border-l1);border-radius:8px;padding:6px 8px;min-width:0;}\n' +
+      '.xq-stat-k{font-size:10px;color:var(--dsw-alias-label-tertiary);margin-bottom:3px;letter-spacing:.2px;}\n' +
+      '.xq-stat-v{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}\n' +
+      '.xq-card{background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-radius:10px;padding:10px 12px;margin-bottom:12px;}\n' +
+      '.xq-card-t{font-size:12.5px;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}\n' +
+      '.xq-card-t::before{content:"";width:3px;height:12px;border-radius:2px;background:var(--dsw-alias-brand-primary);flex:none;}\n' +
+      '.xq-periods{display:inline-flex;flex-wrap:wrap;gap:2px;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;padding:2px;background:var(--dsw-alias-bg-layer-2);}\n' +
+      '.xq-periods button,.xq-modes button{font-size:11.5px;border:none;background:none;color:var(--dsw-alias-label-secondary);padding:3px 9px;border-radius:6px;cursor:pointer;transition:color .12s,background .12s;}\n' +
+      '.xq-periods button:hover,.xq-modes button:hover{color:var(--dsw-alias-label-primary);}\n' +
+      '.xq-periods button.xq-on,.xq-modes button.xq-on{background:color-mix(in srgb, var(--dsw-alias-brand-primary) 16%, transparent);color:var(--dsw-alias-brand-primary);font-weight:700;}\n' +
       '.xq-chart{width:100%;height:auto;display:block;}\n' +
       '.xq-chart-pan{cursor:crosshair;touch-action:none;}\n' +
       '.xq-chart-pan:active{cursor:grabbing;}\n' +
@@ -174,10 +179,10 @@ exports.default = {
       '.xq-tip-d{font-weight:700;}\n' +
       '.xq-tip-r{display:flex;gap:8px;}\n' +
       '.xq-tip-k{color:var(--dsw-alias-label-secondary);}\n' +
-      '.xq-chart-labels{display:flex;justify-content:space-between;font-size:10.5px;color:var(--dsw-alias-label-secondary);margin-top:2px;}\n' +
+      '.xq-chart-labels{display:flex;justify-content:space-between;font-size:10.5px;color:var(--dsw-alias-label-tertiary);margin-top:3px;}\n' +
       '.xq-ma-legend{display:flex;gap:10px;font-size:10.5px;color:var(--dsw-alias-label-secondary);}\n' +
-      '.xq-klc{height:264px;width:100%;min-width:0;}\n' +
-      '.xq-klc-min{height:216px;}\n' +
+      '.xq-klc{height:300px;width:100%;min-width:0;}\n' +
+      '.xq-klc-min{height:230px;}\n' +
       '.xq-kol{display:flex;flex-wrap:wrap;gap:6px;}\n' +
       '.xq-kol-chip{font-size:12px;padding:4px 10px;border-radius:14px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);cursor:pointer;}\n' +
       '.xq-kol-chip:hover{border-color:var(--dsw-alias-brand-primary);}\n' +
@@ -382,13 +387,15 @@ exports.default = {
             upWickColor: pal.up, downWickColor: pal.down, noChangeWickColor: pal.text
           },
           priceMark: {
-            high: { color: pal.text }, low: { color: pal.text },
+            // 关闭最高/最低点重复标注（窄图时易与坐标轴重叠成杂乱数字），保留最新价标
+            high: { show: false }, low: { show: false },
             last: { upColor: pal.up, downColor: pal.down, noChangeColor: pal.text, text: { color: pal.text } }
           }
         },
         indicator: {
           bars: [{ upColor: pal.up, downColor: pal.down, noChangeColor: pal.text }],
-          lines: [{ color: pal.warn }, { color: '#3b82f6' }, { color: '#a855f7' }],
+          // 和谐 MA 配色：蓝/橙/紫/青，多均线更易区分（对齐雪球观感）
+          lines: [{ color: '#3b82f6' }, { color: '#f59e0b' }, { color: '#8b5cf6' }, { color: '#06b6d4' }],
           tooltip: { show: false }   // 指标数值走蜡烛 legend，避免双份
         },
         xAxis: { axisLine: { color: pal.grid }, tickLine: { color: pal.grid }, tickText: { color: pal.text } },
@@ -496,7 +503,8 @@ exports.default = {
             }, function () { busy = false; done([], { forward: false, backward: false }) })
           }
         })
-        chart.createIndicator('MA')
+        // 均线叠加到主图蜡烛 pane（paneId 指定已有主图，不传则默认新开附图 pane）——与雪球一致
+        chart.createIndicator({ name: 'MA', paneId: 'candle_pane' })
         chart.createIndicator('VOL')
         chart.setOffsetRightDistance(16)
         return h.dispose
@@ -527,7 +535,7 @@ exports.default = {
       React.useEffect(function () {
         const K = klcLib()
         if (!K || !boxRef.current) { setNoLib(true); return undefined }
-        // 自定义指标：昨收虚线 + 均价线（series normal，不干扰价格轴刻度）
+        // 自定义指标：昨收虚线 + 均价线（series normal → 单独附图，避免干扰价格轴刻度）
         if (K.getSupportedIndicators().indexOf('xq-minute') < 0) {
           K.registerIndicator({
             name: 'xq-minute', shortName: '分时', series: 'normal',
@@ -572,7 +580,7 @@ exports.default = {
         const up = lastClose ? last >= lastClose : true
         // 涨跌色改面积线色（palette up 色对A股即"涨"）
         chart.setStyles({ candle: { type: 'area', area: { lineColor: up ? klcPalette().up : klcPalette().down, backgroundColor: up ? 'rgba(239,68,68,0.10)' : 'rgba(34,197,94,0.10)' } } })
-        chart.createIndicator('xq-minute')
+        chart.createIndicator({ name: 'xq-minute', paneId: 'candle_pane' })   // 均价/昨收叠加到主图分时曲线（与雪球一致）
         // 分时固定视角：禁缩放拖拽，全部笔数铺满宽度
         chart.setZoomEnabled(false)
         chart.setScrollEnabled(false)
@@ -1044,14 +1052,23 @@ exports.default = {
             ' · ' + fmtBig(u.followers_count) + '粉'
           ])
         })
+        // 行情主标题：现价 + 涨跌额 + 涨跌幅（参考雪球 ¥18.23 +0.14 +0.77% 层级）
+        const chgRaw = (q.current != null && q.last_close != null) ? (Number(q.current) - Number(q.last_close)) : null
+        const chgStr = (chgRaw != null && isFinite(chgRaw)) ? (chgRaw > 0 ? '+' + fmt(chgRaw) : (chgRaw < 0 ? '-' + fmt(Math.abs(chgRaw)) : '0.00')) : ''
+        const priceCls = colorOf(q.percent)
         return el('div', null, [
           el('div', { key: 'h', className: 'xq-detail-head' }, [
             el('button', { key: 'b', className: 'xq-btn-mini', onClick: function () { setView(null) } }, '← 返回'),
             el('span', { key: 'n', className: 'xq-detail-name' }, q.name || view),
             el('span', { key: 'c', className: 'xq-detail-code' }, view),
             el('span', { key: 'sp', className: 'xq-spacer' }),
-            el('span', { key: 'cur', className: 'xq-detail-cur ' + colorOf(q.percent) }, fmt(q.current)),
-            el('span', { key: 'pct', className: 'xq-detail-pct ' + colorOf(q.percent) }, fmtPct(q.percent))
+            el('div', { key: 'px', className: 'xq-detail-price' }, [
+              el('span', { key: 'cur', className: 'xq-detail-cur ' + priceCls }, fmt(q.current)),
+              el('span', { key: 'dl', className: 'xq-detail-delta' }, [
+                chgStr ? el('span', { key: 'chg', className: 'xq-detail-chg ' + priceCls }, chgStr) : null,
+                el('span', { key: 'pct', className: 'xq-detail-pct ' + priceCls }, fmtPct(q.percent))
+              ])
+            ])
           ]),
           el('div', { key: 'st', className: 'xq-stats' }, stats.map(function (s, i) {
             return el('div', { key: i, className: 'xq-stat' }, [

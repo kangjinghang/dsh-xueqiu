@@ -37,8 +37,15 @@ console.log('== L1 行情 (quote/quoteDetail/minute) ==')
 }
 {
   const r = await call('minute', { symbol: 'SH600519' })
-  // 开盘后每分钟一个点；盘外则接近 240。只要 >30 即证明分时链路正常
-  ok(r.ok && D(r).items.length > 30, 'minute 分时数据点数合理 (' + D(r).items.length + ')')
+  // 分时点数下限按北京时间自适应：CI 若在开盘初期（9:30~10:01）触发，点数天然只有十几个——
+  // 硬编码 >30 会在这个窗口必红（v1.22.11 曾踩中）。盘中=开盘至今分钟数（留 2 分钟抖动余量），
+  // 盘外/周末=上一交易日的完整分时（≥200）。
+  const bj = new Date(Date.now() + (new Date().getTimezoneOffset() + 480) * 60000)
+  const bjMin = bj.getHours() * 60 + bj.getMinutes()
+  const weekday = bj.getDay() >= 1 && bj.getDay() <= 5
+  const inEarlySession = weekday && bjMin > 9 * 60 + 25 && bjMin < 15 * 60 + 5
+  const floor = inEarlySession ? Math.max(3, bjMin - (9 * 60 + 30) - 2) : 200
+  ok(r.ok && D(r).items.length > floor, 'minute 分时数据点数合理 (' + D(r).items.length + ' > ' + floor + ')')
   ok(D(r).last_close !== null && D(r).last_close !== undefined, 'minute 有昨收基准')
 }
 

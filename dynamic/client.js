@@ -331,7 +331,7 @@ return {
 
     // ---------- 图表引擎：KLineChart v10（canvas；UMD 由 gen-static.py 注入静态形态，动态会话无库时降级提示） ----------
     // 选型对比（2026-08，实测 gzip 体积）：KLineChart 10.0.2 59.8KB vs lightweight-charts 5.2.1 62.3KB vs ECharts ~330KB。
-    // 胜出理由：零依赖、A股原生观感（红涨绿跌）、内置 MA/VOL 指标与十字光标 legend、dataLoader 反向加载直接对接左拖拉历史。
+    // 胜出理由：零依赖、A股原生观感（红涨绿跌）、内置 MA/VOL 指标与十字光标 legend、dataLoader 反向加载直接对接右拖拉历史。
     function klcLib() {
       try { return (typeof window !== 'undefined' && window.klinecharts) || null } catch (e) { return null }
     }
@@ -475,7 +475,7 @@ return {
       } catch (e) { return 2 }
     }
 
-    // ---------- K线蜡烛图（KLineChart：内置 MA/VOL、滚轮缩放、拖拽平移、左拖自动加载更早历史） ----------
+    // ---------- K线蜡烛图（KLineChart：内置 MA/VOL、滚轮缩放、拖拽平移、右拖自动加载更早历史） ----------
     function KlineChart(props) {
       const rows = props.rows || []
       const onNeedEarlier = props.onNeedEarlier || null
@@ -508,7 +508,7 @@ return {
               return
             }
             // v10 语义（源码 _processDataLoad/_addData）：'backward'=锚定最后一根、concat 到尾部，即拉"更新"数据
-            // （盘中右缘新K线）；'forward'=锚定第一根、前插，即拉"更早"历史（左拖触底）。A股场景无实时增量，backward 恒空。
+            // （盘中右缘新K线）；'forward'=锚定第一根、前插，即拉"更早"历史（右拖触底）。A股场景无实时增量，backward 恒空。
             if (params.type !== 'forward' || busy) { done([], { forward: false, backward: false }); return }
             const fetch = propsRef.current.onNeedEarlier
             if (!fetch) { done([], { forward: false, backward: false }); return }
@@ -541,7 +541,7 @@ return {
         el('div', { key: 'c', ref: boxRef, className: 'xq-klc' }),
         el('div', { key: 'lb', className: 'xq-chart-labels' }, [
           el('span', { key: 'd' }, norm.length ? fmtDay(norm[0].timestamp) + ' ~ ' + fmtDay(norm[norm.length - 1].timestamp) : ''),
-          el('span', { key: 'n' }, norm.length + ' 根 · 滚轮缩放 · 左拖加载更早 · 双击回最新')
+          el('span', { key: 'n' }, norm.length + ' 根 · 滚轮缩放 · 右拖加载更早 · 双击回最新')
         ])
       ])
     }
@@ -807,7 +807,7 @@ return {
         }
       }, [marketOpen])
 
-      // K线历史获取（纯函数，不碰 React 状态）：图表左拖触底时拉更早的 500 根，返回原始行；
+      // K线历史获取（纯函数，不碰 React 状态）：图表右拖触底时拉更早的 500 根，返回原始行；
       // 图表内部自行前插持有全部历史，React 缓冲始终只是初始窗口（避免双数据源互相反馈）。
       function fetchEarlierKline(earliestTs) {
         if (!view || !detail || !detail.kline) return []

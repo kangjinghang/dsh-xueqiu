@@ -309,7 +309,12 @@ return {
           if (k === 'open') this.openTouched = true
           if (k === 'tab') this.tabTouched = true
         }
-        if (ch) this.notify()
+        if (ch) {
+          this.notify()
+          // 打开面板的 set 发生在面板组件订阅建立之前（订阅在挂载后才生效）——
+          // 若无人续触发 ui.set，open=true 永远不落盘，刷新后面板关着。open 翻转直接触发落盘。
+          if ('open' in patch) { try { saveUi() } catch (e) { /* 初始化前忽略 */ } }
+        }
       }
     }
 

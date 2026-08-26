@@ -103,11 +103,8 @@ record('注册对象 kind=prefix / path=/xq-rpc', reg.kind === 'prefix' && reg.p
   const r3 = await fire(reg.handler, { host: '[::1]:3080', origin: 'http://[::1]:3080' }, [body])
   record('[::1] host → 200', r3.status === 200 && JSON.parse(r3.body).ok === true, 'status=' + r3.status)
   const r4 = await fire(reg.handler, { host: '::1', origin: 'http://::1' }, [body])
-  // 已知问题（xfail，不阻塞 check:fast）：host.js 的端口剥离正则 /:\d+$/ 会把裸 '::1'
-  // 末尾的 ':1' 当端口剥掉，得到 ':' → 白名单里的 hostAuth === '::1' 分支永远不可达。
-  // 真实浏览器 IPv6 回环用 '[::1]' 括号形态（上面已验证 200），影响极小。
-  // 断言语义：若上游修复了死代码，本条会变成"预期 403 但得到 200"从而失败，提醒删除 xfail 标记。
-  record('::1 host（无端口）当前按 403 拒绝【xfail:已知死代码 bug，详见测试报告】', r4.status === 403, 'status=' + r4.status)
+  // 死代码已修：端口剥离正则改为 /^(.*[^:]):\d+$/，裸 '::1' 不再被剥掉 ':1'，白名单分支可达
+  record('::1 host（无端口）按回环放行', r4.status === 200 && JSON.parse(r4.body).ok === true, 'status=' + r4.status)
 }
 // ---- 413：body 累计 > 1MB ----
 {

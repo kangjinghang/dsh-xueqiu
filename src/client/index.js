@@ -472,12 +472,27 @@ exports.default = {
         if (mq.addEventListener) { mq.addEventListener('change', onScheme); mqOff = function () { mq.removeEventListener('change', onScheme) } }
         else if (mq.addListener) { mq.addListener(onScheme); mqOff = function () { mq.removeListener(onScheme) } }
       } catch (e) { /* ignore */ }
+      // 拖拽光标反馈（K线/分时共用）：悬停小手、按住抓手（松手点可能在图外，需 window 级兜底复位）
+      const onCurDown = function () { try { box.classList.add('xq-dragging') } catch (e) { /* 忽略 */ } }
+      const onCurUp = function () { try { box.classList.remove('xq-dragging') } catch (e) { /* 忽略 */ } }
+      try {
+        box.addEventListener('mousedown', onCurDown)
+        box.addEventListener('mouseup', onCurUp)
+        box.addEventListener('mouseleave', onCurUp)
+        window.addEventListener('mouseup', onCurUp)
+      } catch (e) { /* 忽略 */ }
       return {
         chart: chart,
         dispose: function () {
           if (ro) ro.disconnect()
           if (mo) mo.disconnect()
           if (mqOff) mqOff()
+          try {
+            box.removeEventListener('mousedown', onCurDown)
+            box.removeEventListener('mouseup', onCurUp)
+            box.removeEventListener('mouseleave', onCurUp)
+            window.removeEventListener('mouseup', onCurUp)
+          } catch (e) { /* 忽略 */ }
           // 卸载清理时 boxRef.current 已被 React 置 null（与 dblclick 监听同类坑），须闭包捕获节点
           try { K.dispose(box) } catch (e) { /* 忽略 */ }
         }
@@ -557,23 +572,13 @@ exports.default = {
         chart.createIndicator('VOL')
         chart.setOffsetRightDistance(16)
         // 双击回最新（标签文案承诺过；kline v10 自带 dblclick 仅做空十字，需手动 scrollToRealTime）
+        // 拖拽光标反馈已统一在 klcSetup（K线/分时共用）
         const box = boxRef.current
         const onDbl = function () { try { chart.scrollToRealTime() } catch (e) { /* 忽略 */ } }
         box.addEventListener('dblclick', onDbl)
-        // 拖拽光标反馈：悬停小手、按住变抓手（松手点可能在图外，需 window 级兜底复位）
-        const onCurDown = function () { try { box.classList.add('xq-dragging') } catch (e) { /* 忽略 */ } }
-        const onCurUp = function () { try { box.classList.remove('xq-dragging') } catch (e) { /* 忽略 */ } }
-        box.addEventListener('mousedown', onCurDown)
-        box.addEventListener('mouseup', onCurUp)
-        box.addEventListener('mouseleave', onCurUp)
-        window.addEventListener('mouseup', onCurUp)
         return function () {
           // 卸载清理时 boxRef.current 已被 React 置 null（切 tab 触发，曾致槽位整体崩溃），须闭包捕获节点
           try { box.removeEventListener('dblclick', onDbl) } catch (e) { /* 忽略 */ }
-          try { box.removeEventListener('mousedown', onCurDown) } catch (e) { /* 忽略 */ }
-          try { box.removeEventListener('mouseup', onCurUp) } catch (e) { /* 忽略 */ }
-          try { box.removeEventListener('mouseleave', onCurUp) } catch (e) { /* 忽略 */ }
-          try { window.removeEventListener('mouseup', onCurUp) } catch (e) { /* 忽略 */ }
           h.dispose()
         }
       }, [hasRows])

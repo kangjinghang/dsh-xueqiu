@@ -898,7 +898,8 @@ export default {
             // 同源栅栏：Host 头必须是回环，Origin 必须存在且同源（防 DNS rebinding/CSRF/无 Origin 的跨进程直调）
             const hostHeader = String(req.headers.host || '')
             const origin = req.headers.origin ? String(req.headers.origin) : ''
-            const hostAuth = hostHeader.replace(/:\d+$/, '')
+            // 端口剥离：要求冒号前存在非冒号字符——裸 IPv6 '::1' 不会被误剥末尾 ':1'（曾致白名单死代码）
+            const hostAuth = hostHeader.replace(/^(.*[^:]):\d+$/, '$1')
             const loopback = hostAuth === '127.0.0.1' || hostAuth === 'localhost' || hostAuth === '[::1]' || hostAuth === '::1'
             if (!loopback) { res.writeHead(403); res.end('forbidden'); return }
             // 浏览器对（哪怕同源的）POST fetch 必带 Origin；无 Origin 一律拒绝（curl/本机进程裸调）

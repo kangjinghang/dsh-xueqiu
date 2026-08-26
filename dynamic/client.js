@@ -150,7 +150,8 @@ return {
       '.xq-tip-k{color:var(--dsw-alias-label-secondary);}\n' +
       '.xq-chart-labels{display:flex;justify-content:space-between;font-size:10.5px;color:var(--dsw-alias-label-tertiary);margin-top:3px;}\n' +
       '.xq-ma-legend{display:flex;gap:10px;font-size:10.5px;color:var(--dsw-alias-label-secondary);}\n' +
-      '.xq-klc{height:300px;width:100%;min-width:0;}\n' +
+      '.xq-klc{height:300px;width:100%;min-width:0;cursor:grab;}\n' +
+      '.xq-klc.xq-dragging{cursor:grabbing;}\n' +
       '.xq-klc-min{height:230px;}\n' +
       '.xq-kol{display:flex;flex-wrap:wrap;gap:6px;}\n' +
       '.xq-kol-chip{font-size:12px;padding:4px 10px;border-radius:14px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);cursor:pointer;}\n' +
@@ -528,9 +529,20 @@ return {
         const box = boxRef.current
         const onDbl = function () { try { chart.scrollToRealTime() } catch (e) { /* 忽略 */ } }
         box.addEventListener('dblclick', onDbl)
+        // 拖拽光标反馈：悬停小手、按住变抓手（松手点可能在图外，需 window 级兜底复位）
+        const onCurDown = function () { try { box.classList.add('xq-dragging') } catch (e) { /* 忽略 */ } }
+        const onCurUp = function () { try { box.classList.remove('xq-dragging') } catch (e) { /* 忽略 */ } }
+        box.addEventListener('mousedown', onCurDown)
+        box.addEventListener('mouseup', onCurUp)
+        box.addEventListener('mouseleave', onCurUp)
+        window.addEventListener('mouseup', onCurUp)
         return function () {
           // 卸载清理时 boxRef.current 已被 React 置 null（切 tab 触发，曾致槽位整体崩溃），须闭包捕获节点
           try { box.removeEventListener('dblclick', onDbl) } catch (e) { /* 忽略 */ }
+          try { box.removeEventListener('mousedown', onCurDown) } catch (e) { /* 忽略 */ }
+          try { box.removeEventListener('mouseup', onCurUp) } catch (e) { /* 忽略 */ }
+          try { box.removeEventListener('mouseleave', onCurUp) } catch (e) { /* 忽略 */ }
+          try { window.removeEventListener('mouseup', onCurUp) } catch (e) { /* 忽略 */ }
           h.dispose()
         }
       }, [hasRows])

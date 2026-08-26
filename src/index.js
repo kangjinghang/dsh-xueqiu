@@ -476,6 +476,50 @@ export default {
       }
     }
 
+    // ---- 状态文件落点：稳定目录优先，工作区回退 ----
+    // 旧实现 cwd=工作区根 → 状态文件跟着 dsh web 启动目录漂移（换目录启动=换一套
+    // 自选/登录/界面状态）。现在优先写 $DSH_HOME/dsh-xueqiu/（writeText 自动建目录），
+    // 沙箱策略拒绝工作区外绝对路径时探测失败，透明回退旧工作区行为（零回归）。
+    // 读取顺序：稳定文件 → 缺失则回读旧工作区文件（存量数据无缝迁移，首次保存落到稳定目录）。
+    let stateBasePromise = null
+    function stableStateDir() {
+      try {
+        const env = (typeof process !== 'undefined' && process && process.env) || {}
+        const base = env.DSH_HOME || ((env.HOME || env.USERPROFILE) ? (env.HOME || env.USERPROFILE) + '/.dsh' : '')
+        return base ? String(base).replace(/[/\\]+$/, '') + '/dsh-xueqiu' : ''
+      } catch (e) { return '' }
+    }
+    function stateBase(fs, root) {
+      if (!stateBasePromise) {
+        stateBasePromise = (async function () {
+          const dir = stableStateDir()
+          if (!fs || !dir) return ''
+          try {
+            const probe = await fs.resolve(dir + '/.write-probe', { cwd: root })
+            await fs.writeText(probe, String(Date.now()))
+            return dir
+          } catch (e) { return '' }
+        })()
+      }
+      return stateBasePromise
+    }
+    // 读：稳定文件优先；稳定模式且稳定文件缺失时，回读旧工作区路径（迁移源）
+    async function stateRead(name, fs, root) {
+      const dir = await stateBase(fs, root)
+      if (dir) {
+        try { return await fs.readText(await fs.resolve(dir + '/' + name, { cwd: root })) } catch (e) { /* 试旧工作区 */ }
+      }
+      if (!root) return null
+      try { return await fs.readText(await fs.resolve(name, { cwd: root })) } catch (e) { return null }
+    }
+    // 写：稳定模式写稳定目录；否则旧工作区。返回真实落点（排障暴露用）
+    async function stateWrite(name, text, fs, root) {
+      const dir = await stateBase(fs, root)
+      const target = await fs.resolve(dir ? dir + '/' + name : name, { cwd: root })
+      await fs.writeText(target, text)
+      return target
+    }
+
     // ---- watchlist ----
     async function loadWatchlist() {
       if (watchlist) return watchlist
@@ -483,11 +527,10 @@ export default {
       const fs = ctx.get('fs')
       const sp = ctx.get('sandboxPolicy')
       const root = sp && sp.workspaceRoot ? sp.workspaceRoot : null
-      if (fs && root) {
+      if (fs) {
         try {
-          const target = await fs.resolve('.xueqiu-watchlist.json', { cwd: root })
-          const text = await fs.readText(target)
-          const parsed = JSON.parse(text)
+          const text = await stateRead('.xueqiu-watchlist.json', fs, root)
+          const parsed = text == null ? null : JSON.parse(text)
           if (parsed && Array.isArray(parsed.symbols) && parsed.symbols.length) {
             watchlist = { symbols: parsed.symbols.slice(0, 200), lastSyncAt: Number(parsed.lastSyncAt) || 0 }
           }
@@ -500,10 +543,9 @@ export default {
       const fs = ctx.get('fs')
       const sp = ctx.get('sandboxPolicy')
       const root = sp && sp.workspaceRoot ? sp.workspaceRoot : null
-      if (!fs || !root) return
+      if (!fs) return
       try {
-        const target = await fs.resolve('.xueqiu-watchlist.json', { cwd: root })
-        await fs.writeText(target, JSON.stringify(watchlist))
+        await stateWrite('.xueqiu-watchlist.json', JSON.stringify(watchlist), fs, root)
       } catch (e) { /* 保持内存态 */ }
     }
 
@@ -623,24 +665,28 @@ export default {
       return c.replace(/[\r\n]+/g, ' ').trim()
     }
 
-    // 登录文件路径由运行时 workspaceRoot 决定（随会话变化）——排障时绝不靠猜，
+    // 登录文件真实落点（稳定目录优先，见 stateBase）——排障时绝不靠猜，
     // login.status 会把这个真实路径暴露出去。
     async function loginFilePath() {
       const fs = ctx.get('fs')
       const sp = ctx.get('sandboxPolicy')
       const root = sp && sp.workspaceRoot ? sp.workspaceRoot : null
-      if (!fs || !root) return null
-      try { return await fs.resolve('.xueqiu-login.json', { cwd: root }) } catch (e) { return null }
+      if (!fs) return null
+      try {
+        const dir = await stateBase(fs, root)
+        return await fs.resolve(dir ? dir + '/.xueqiu-login.json' : '.xueqiu-login.json', { cwd: root })
+      } catch (e) { return null }
     }
 
     async function loadLogin() {
       if (login !== null) return login
       const fs = ctx.get('fs')
-      const target = await loginFilePath()
-      if (fs && target) {
+      const sp = ctx.get('sandboxPolicy')
+      const root = sp && sp.workspaceRoot ? sp.workspaceRoot : null
+      if (fs) {
         try {
-          const text = await fs.readText(target)
-          const parsed = JSON.parse(text)
+          const text = await stateRead('.xueqiu-login.json', fs, root)
+          const parsed = text == null ? null : JSON.parse(text)
           if (parsed && parsed.cookie && /xq_a_token=/.test(parsed.cookie)) login = parsed
         } catch (e) { /* 未登录 */ }
       }
@@ -790,11 +836,10 @@ export default {
       const fs = ctx.get('fs')
       const sp = ctx.get('sandboxPolicy')
       const root = sp && sp.workspaceRoot ? sp.workspaceRoot : null
-      if (fs && root) {
+      if (fs) {
         try {
-          const target = await fs.resolve('.xueqiu-ui-state.json', { cwd: root })
-          const text = await fs.readText(target)
-          const parsed = JSON.parse(text)
+          const text = await stateRead('.xueqiu-ui-state.json', fs, root)
+          const parsed = text == null ? null : JSON.parse(text)
           if (parsed && typeof parsed === 'object') uiState = parsed
         } catch (e) { /* 默认状态 */ }
       }
@@ -805,10 +850,9 @@ export default {
       const fs = ctx.get('fs')
       const sp = ctx.get('sandboxPolicy')
       const root = sp && sp.workspaceRoot ? sp.workspaceRoot : null
-      if (!fs || !root) return
+      if (!fs) return
       try {
-        const target = await fs.resolve('.xueqiu-ui-state.json', { cwd: root })
-        await fs.writeText(target, JSON.stringify(uiState))
+        await stateWrite('.xueqiu-ui-state.json', JSON.stringify(uiState), fs, root)
       } catch (e) { /* 保持内存态 */ }
     }
 

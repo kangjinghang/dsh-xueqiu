@@ -1,6 +1,6 @@
 {
   "name": "dsh-xueqiu",
-  "version": "1.22.11",
+  "version": "1.22.12",
   "description": "雪球 mini 行情面板 — DeepSeek Harness 免登录 A股/港美股实时行情、K线(蜡烛/成交量/均线)、分时图、热榜、搜索、7x24 快讯、热议用户。嵌入式面板 + 可拖拽行情徽标，内置请求节流、TTL 缓存与 Cookie 自动续期。",
   "keywords": [
     "dsh",
@@ -52,7 +52,7 @@
   ],
   "scripts": {
     "generate": "python3 scripts/gen-static.py",
-    "check:fast": "python3 scripts/gen-static.py --check && node --check src/index.js && node --check src/client/index.js && node -e \"new Function(require('fs').readFileSync('dynamic/host.js','utf8'))\" && node -e \"new Function(require('fs').readFileSync('dynamic/client.js','utf8'))\" && node qa/fence.mjs && node qa/regress-v1228.mjs && node qa/persist-upgrade.mjs",
+    "check:fast": "python3 scripts/gen-static.py --check && node --check src/index.js && node --check src/client/index.js && node -e \"new Function(require('fs').readFileSync('dynamic/host.js','utf8'))\" && node -e \"new Function(require('fs').readFileSync('dynamic/client.js','utf8'))\" && node qa/fence.mjs && node qa/regress-v1228.mjs && node qa/persist-upgrade.mjs && node qa/state-paths.mjs",
     "check": "npm run check:fast && bash scripts/static-smoke.sh && node qa/edge.mjs && node qa/unit.mjs",
     "smoke": "bash scripts/static-smoke.sh",
     "prepublishOnly": "npm run check:fast"

@@ -8,6 +8,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 const run = promisify(execFile)
 
+// 状态文件稳定目录指向临时位置：host.js 的 stateBase 探测会写 $DSH_HOME/dsh-xueqiu/，
+// 测试进程绝不落到真实家目录（模块加载时设置，所有导入方生效）
+if (!process.env.DSH_HOME) {
+  process.env.DSH_HOME = mkdtempSync(join(tmpdir(), 'xq-qa-home-'))
+}
+
 export function loadPlugin() {
   const src = readFileSync(new URL('../dynamic/host.js', import.meta.url), 'utf8')
   return new Function(src)() // -> { inject, apply }
@@ -28,7 +34,8 @@ export function makeCtx(opts = {}) {
     get(name) {
       if (name === 'shell') return opts.shell
       if (name === 'fs') return {
-        resolve: async (p) => join(root, p),
+        // 绝对路径（状态稳定目录）原样返回；相对路径按工作区根拼接
+        resolve: async (p) => (p && p[0] === '/') ? p : join(root, p),
         readText: async (p) => { const f = files[p.split('/').pop()]; if (f === undefined) throw new Error('ENOENT'); return f },
         writeText: async (p, t) => { files[p.split('/').pop()] = t },
       }

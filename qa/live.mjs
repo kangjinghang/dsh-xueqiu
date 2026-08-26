@@ -37,14 +37,20 @@ console.log('== L1 行情 (quote/quoteDetail/minute) ==')
 }
 {
   const r = await call('minute', { symbol: 'SH600519' })
-  // 分时点数下限按北京时间自适应：CI 若在开盘初期（9:30~10:01）触发，点数天然只有十几个——
-  // 硬编码 >30 会在这个窗口必红（v1.22.11 曾踩中）。盘中=开盘至今分钟数（留 2 分钟抖动余量），
-  // 盘外/周末=上一交易日的完整分时（≥200）。
+  // 分时点数下限按北京时间时段自适应（A股 9:30-11:30 / 13:00-15:00 两段交易）：
+  // v1.22.11 只处理了开盘初期线性推算；午休（11:30-13:00）分时停在早盘 ~121 点、
+  // 午后累计 = 121 + (现在-13:00)，若仍按"9:30 至今分钟数"推下限必红——v1.22.13 又踩中
+  // （11:44 触发的 CI：实际 121 点 vs 下限 132）。
   const bj = new Date(Date.now() + (new Date().getTimezoneOffset() + 480) * 60000)
   const bjMin = bj.getHours() * 60 + bj.getMinutes()
   const weekday = bj.getDay() >= 1 && bj.getDay() <= 5
-  const inEarlySession = weekday && bjMin > 9 * 60 + 25 && bjMin < 15 * 60 + 5
-  const floor = inEarlySession ? Math.max(3, bjMin - (9 * 60 + 30) - 2) : 200
+  const OPEN = 9 * 60 + 30, LUNCH = 11 * 60 + 30, REOPEN = 13 * 60, CLOSE = 15 * 60
+  let floor = 200   // 盘外/周末/节假日：上一交易日的完整分时（~241 点）
+  if (weekday) {
+    if (bjMin >= OPEN - 2 && bjMin < LUNCH + 2) floor = Math.max(0, bjMin - OPEN - 2)                       // 早盘进行中（留 2 分钟抖动；开盘头 1 分钟实际可能只有 1 点）
+    else if (bjMin >= LUNCH + 2 && bjMin < REOPEN + 2) floor = 118                                       // 午休：早盘已收 ~121 点
+    else if (bjMin >= REOPEN + 2 && bjMin <= CLOSE + 10) floor = Math.min(238, 121 + (bjMin - REOPEN) - 3) // 午后进行中（封顶防节假日误判）
+  }
   ok(r.ok && D(r).items.length > floor, 'minute 分时数据点数合理 (' + D(r).items.length + ' > ' + floor + ')')
   ok(D(r).last_close !== null && D(r).last_close !== undefined, 'minute 有昨收基准')
 }

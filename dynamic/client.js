@@ -215,13 +215,18 @@ return {
       if (Math.abs(n) >= 1e4) return (n / 1e4).toFixed(2) + '万'
       return String(n)
     }
-    function fmtVol(v) {
+    // 雪球 volume 字段全市场均为「股」（实证：amount/volume ≈ price，含A股/港/美/ETF/指数，
+    // quote/kline/minute 三接口一致）。A股口径按 1手=100股 换算显示；港/美直接以股计。
+    function fmtVol(v, symbol) {
       if (v === null || v === undefined) return '--'
       const n = Number(v)
       if (!isFinite(n)) return '--'
-      if (n >= 1e8) return (n / 1e8).toFixed(2) + '亿手'
-      if (n >= 1e4) return (n / 1e4).toFixed(2) + '万手'
-      return String(n)
+      const cn = /^(SH|SZ|BJ)/i.test(String(symbol || ''))
+      const lots = cn ? n / 100 : n
+      const unit = cn ? '手' : '股'
+      if (lots >= 1e8) return (lots / 1e8).toFixed(2) + '亿' + unit
+      if (lots >= 1e4) return (lots / 1e4).toFixed(2) + '万' + unit
+      return (cn ? String(Math.round(lots)) : String(lots)) + unit
     }
     function fmtTime(ts) {
       if (!ts) return ''
@@ -749,14 +754,20 @@ return {
           if (!wl.length) return
           return call('quote', { symbols: wl }).then(function (data) {
             const list = (data && data.list) || []
+            // 批量行情会整只丢弃无效/退市代码：补占位行（现价/涨跌全 '--'，仍可删除/查详情），
+            // 否则"加进自选却凭空消失"没有任何反馈
+            const seen = {}
+            list.forEach(function (q) { seen[q.symbol] = 1 })
+            const missing = wl.filter(function (s) { return !seen[s] }).map(function (s) { return { symbol: s } })
             const dirs = {}
             list.forEach(function (q) {
+              if (q.current === null || q.current === undefined) return
               const prev = prevPrices.current[q.symbol]
               if (prev !== undefined && q.current !== prev) dirs[q.symbol] = q.current > prev ? 1 : -1
               prevPrices.current[q.symbol] = q.current
             })
             if (Object.keys(dirs).length) setFlashDir(dirs)
-            setQuotes(list)
+            setQuotes(list.concat(missing))
           })
         }).catch(function (e) {
           setErr(String((e && e.message) || e))
@@ -1077,12 +1088,12 @@ return {
         const rows = sorted.map(function (q) {
           return el('div', { key: q.symbol, className: 'xq-grid-row', onClick: function () { openDetail(q.symbol) } }, [
             el('div', { key: 'n' }, [
-              el('div', { key: 'a', className: 'xq-name' }, q.name),
+              el('div', { key: 'a', className: 'xq-name' }, q.name || q.symbol),
               el('div', { key: 'b', className: 'xq-sub' }, q.symbol)
             ]),
             el('div', { key: 'c', className: colorOf(q.percent) + (flashDir[q.symbol] === 1 ? ' xq-flash-up' : flashDir[q.symbol] === -1 ? ' xq-flash-down' : '') }, fmt(q.current)),
             el('div', { key: 'p' }, el('span', { key: 'pp', className: 'xq-pct-chip ' + colorOf(q.percent) }, fmtPct(q.percent))),
-            el('div', { key: 'v', className: 'xq-sub' }, fmtVol(q.volume)),
+            el('div', { key: 'v', className: 'xq-sub' }, fmtVol(q.volume, q.symbol)),
             el('div', { key: 'a2', className: 'xq-actions' }, [
               el('button', { key: 'd', className: 'xq-btn-mini', onClick: function (e) { e.stopPropagation(); openDetail(q.symbol) } }, '详情'),
               el('button', { key: 'r', className: 'xq-btn-mini', title: '移除自选', onClick: function (e) { e.stopPropagation(); removeWatch(q.symbol) } }, '×')
@@ -1123,7 +1134,7 @@ return {
         const firstFin = fin.list && fin.list.length ? fin.list[0] : null
         const stats = [
           ['今开', fmt(q.open)], ['昨收', fmt(q.last_close)], ['最高', fmt(q.high)], ['最低', fmt(q.low)],
-          ['成交量', fmtVol(q.volume)], ['成交额', fmtBig(q.amount)], ['换手率', fmt(q.turnover_rate) + '%'], ['振幅', fmt(q.amplitude) + '%'],
+          ['成交量', fmtVol(q.volume, q.symbol)], ['成交额', fmtBig(q.amount)], ['换手率', fmt(q.turnover_rate) + '%'], ['振幅', fmt(q.amplitude) + '%'],
           ['总市值', fmtBig(q.market_capital)], ['流通市值', fmtBig(q.float_market_capital)], ['量比', fmt(q.volume_ratio)], ['PE(TTM)', fmt(q.pe_ttm)],
           ['PB', fmt(q.pb)], ['股息率', fmt(q.dividend_yield) + '%'], ['52周高', fmt(q.high52w)], ['52周低', fmt(q.low52w)]
         ]

@@ -190,8 +190,10 @@ dsh-xueqiu/
 
 ## 📋 更新日志
 
+- **1.22.15**（2026-09-03）
+  - 变更：元数据脱敏补丁。更新日志措辞去除旧账号字样；npm 维护者信息刷新。功能零变更。
 - **1.22.14**（2026-09-03）
-  - 变更：**仓库迁移至 `wanderer-yk`**。GitHub 账号更名后全量同步：README / README.en / package.json / LICENSE 中的仓库链接、徽章、图片外链、安装命令全部从 `kangjinghang/dsh-xueqiu` 更新为 `wanderer-yk/dsh-xueqiu`；git 全部历史提交与标签署名经 `git filter-repo` 重写为 noreply 身份，历史文件内容同步清洗。
+  - 变更：**仓库迁移至 `wanderer-yk`**。GitHub 账号更名后全量同步：README / README.en / package.json / LICENSE 中的仓库链接、徽章、图片外链、安装命令全部更新为 `wanderer-yk/dsh-xueqiu`；git 全部历史提交与标签署名经 `git filter-repo` 重写为 noreply 身份，历史文件内容同步清洗。
   - 修复：`static-smoke.sh` 查找 dsh 二进制时硬编码机器特定绝对路径，改为 `$HOME` 展开（可移植性 + 去隐私泄露）。
   - 功能零变更；发布本版主要目的为刷新 npm 侧 homepage / 仓库地址 / readme 元数据。
 - **1.22.13**（2026-08-26）

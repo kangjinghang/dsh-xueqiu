@@ -20,7 +20,7 @@ PLUGIN_DIR=$(cd "$PLUGIN_DIR" && pwd)
 PORT=${SMOKE_PORT:-3199}
 # 默认找本地 npx 缓存里的 dsh（避免依赖全局 dsh 命令）；可被 DSH_BIN 覆盖
 if [ -z "${DSH_BIN:-}" ]; then
-  DSH_BIN=$(ls /Users/wanderer-yk/.npm/_npx/*/node_modules/.bin/dsh 2>/dev/null | head -1)
+  DSH_BIN=$(ls "$HOME"/.npm/_npx/*/node_modules/.bin/dsh 2>/dev/null | head -1)
   [ -z "$DSH_BIN" ] && DSH_BIN=dsh
 fi
 export DSH_BIN
